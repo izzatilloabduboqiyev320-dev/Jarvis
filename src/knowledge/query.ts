@@ -229,7 +229,7 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
   if (!text) return empty;
   const sel = ctx.selected && graph.hasNode(ctx.selected) ? ctx.selected : null;
 
-  if (/^(hi|hello|hey|yo|salom|good (morning|evening|afternoon))\b/.test(text) || text === "") {
+  if (/^(hi|hello|hey|yo|salom|salam|good (morning|evening|afternoon))\b/.test(text) || text === "") {
     return { ...empty, intent: "greeting", answer: uz ? "Ha? Men shu yerdaman. Loyihalaringiz, bilimlaringiz yoki fayllaringiz haqida so'rang." : "Yes? I'm online. Ask me about your projects, knowledge or files." };
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useJarvis, type HudState } from "@/lib/store";
-import { askJarvis } from "@/services/jarvis";
+import { askJarvis, testVoice } from "@/services/jarvis";
 import { onMicLevel, startPushToTalk } from "@/voice/push-to-talk";
 import { stopSpeaking } from "@/voice/speak";
 
@@ -143,6 +143,22 @@ export default function JarvisHud() {
           {status.mode === "demo" ? "demo mode" : "online"}
         </div>
         <div className="ml-auto flex items-center gap-1">
+        <button
+          onClick={() => {
+            stopSpeaking();
+            void testVoice();
+          }}
+          disabled={hud === "listening"}
+          className="flex h-6 items-center border border-line px-1.5 text-ink-dim transition hover:border-accent/60 hover:text-accent disabled:opacity-40"
+          title={uz ? "Ovozni sinash" : "Test voice"}
+          aria-label={uz ? "Ovozni sinash" : "Test voice"}
+          data-testid="voice-test"
+        >
+          <svg width="12" height="11" viewBox="0 0 12 11" fill="none" aria-hidden>
+            <path d="M1 4h2l3-2.5v8L3 7H1z" stroke="currentColor" strokeLinejoin="round" />
+            <path d="M8.2 3.3a3 3 0 0 1 0 4.4M9.8 1.8a5 5 0 0 1 0 7.4" stroke="currentColor" />
+          </svg>
+        </button>
         <button
           onClick={() => setVoiceLang(uz ? "en-US" : "uz-UZ")}
           disabled={hud === "listening"}

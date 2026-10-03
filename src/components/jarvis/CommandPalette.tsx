@@ -7,7 +7,7 @@ import { searchLabels } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
-import { askJarvis } from "@/services/jarvis";
+import { askJarvis, testVoice } from "@/services/jarvis";
 import { Dot } from "@/components/layout/ui";
 
 type Mode = "root" | "note" | "task" | "memory" | "files";
@@ -126,6 +126,7 @@ function PaletteDialog() {
         hint: "browser voice",
         run: () => useJarvis.getState().setVoiceReplies(!voiceReplies),
       },
+      { key: "c-voice-test", group: "Commands", label: "Test voice (Ovozni sinash)", run: () => { void testVoice(); setOpen(false); } },
       { key: "c-reset", group: "Commands", label: "Reset view", run: () => { useJarvis.getState().clearFocus(); graphCommands.fit(); setOpen(false); } },
     ];
     const out: Item[] = [];

@@ -35,8 +35,13 @@ function pickVoice(voices: SpeechSynthesisVoice[], lang: "en" | "uz") {
   );
 }
 
-export async function speak(text: string, lang: "en" | "uz" = "en"): Promise<void> {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+export function speechSynthesisSupported(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+/** Speaks `text`. Resolves with the voice used, or null when the browser has no speech output. */
+export async function speak(text: string, lang: "en" | "uz" = "en"): Promise<string | null> {
+  if (!speechSynthesisSupported()) return null;
   const synth = window.speechSynthesis;
   synth.cancel();
   const voice = pickVoice(await loadVoices(synth), lang);
@@ -57,6 +62,7 @@ export async function speak(text: string, lang: "en" | "uz" = "en"): Promise<voi
     // Safety net: some browsers never fire onend.
     setTimeout(resolve, Math.min(30_000, 1500 + text.length * 80));
   });
+  return voice ? `${voice.name} (${voice.lang})` : "default voice";
 }
 
 export function stopSpeaking() {

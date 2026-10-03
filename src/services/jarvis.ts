@@ -28,6 +28,17 @@ export function setNavigator(fn: (path: string) => void) {
   navigate = fn;
 }
 
+/** Says a short test phrase so the user can check that sound works. */
+export async function testVoice() {
+  const s = useJarvis.getState();
+  const uz = s.voiceLang === "uz-UZ";
+  if (!s.voiceReplies) s.setVoiceReplies(true);
+  s.setHud("speaking", uz ? "Ovoz sinovi" : "Voice test");
+  const voice = await speak(uz ? "Salom! Men JARVIS. Ovozim eshitilyaptimi?" : "Hello. I am JARVIS. Can you hear me?", uz ? "uz" : "en");
+  s.log("system", voice ? `Voice test — voice: ${voice}` : "This browser has no speech output");
+  if (useJarvis.getState().hud === "speaking") useJarvis.getState().setHud("idle");
+}
+
 export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}): Promise<QueryResult | null> {
   const text = input.trim();
   if (!text || busy) return null;
@@ -59,7 +70,10 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     s.addMessage("jarvis", result.answer);
     s.log("ai", `JARVIS responded (${useJarvis.getState().status.mode === "demo" ? "demo brain" : "Claude"})`);
     s.setHud("speaking", "Responding");
-    if (useJarvis.getState().voiceReplies) await speak(result.answer, result.lang ?? "en");
+    if (useJarvis.getState().voiceReplies) {
+      const voice = await speak(result.answer, result.lang ?? "en");
+      s.log("system", voice ? `Spoke reply — voice: ${voice}` : "This browser has no speech output; reply shown as text");
+    }
     else await wait(Math.min(2400, 700 + result.answer.length * 12));
     return result;
   } catch (err) {

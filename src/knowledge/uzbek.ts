@@ -15,7 +15,7 @@ export function normalizeApostrophes(s: string): string {
 }
 
 const UZ_MARKERS =
-  /(^|\s)(nima|nimalar|qanday|qanaqa|ko'rsat\w*|bilan|haqida|hamma|hammasi\w*|barcha|eslab|yodda|qani|menga|mening|loyiha\w*|qil\w*|bog'l\w*|va|uchun|kecha|bugun|salom|assalomu|top\w*|och\w*|vazifa\w*|eslatma\w*|fayl\w*|xotira\w*|qaror\w*|ustida|ishla\w*|narsa\w*|qidir\w*|izla\w*|internet\w*|kerak|emas|yo'q|ha|yaxshi|rahmat)(?=\s|$)/;
+  /(^|\s)(nima|nimalar|qanday|qanaqa|ko'rsat\w*|bilan|haqida|hamma|hammasi\w*|barcha|eslab|yodda|qani|menga|mening|loyiha\w*|qil\w*|bog'l\w*|va|uchun|kecha|bugun|salom|salam|assalomu|assalom|top\w*|och\w*|vazifa\w*|eslatma\w*|fayl\w*|xotira\w*|qaror\w*|ustida|ishla\w*|narsa\w*|qidir\w*|izla\w*|internet\w*|kerak|emas|yo'q|ha|yaxshi|rahmat)(?=\s|$)/;
 
 export function detectLang(raw: string): Lang {
   const t = normalizeApostrophes(raw.toLowerCase());
@@ -64,7 +64,7 @@ export function uzToEn(text: string): string {
   const memoryEnd = /(eslab\s+qol\w*|yodda\s+tut\w*|xotiraga\s+(yoz|saqla)\w*|(vazifa|topshiriq|eslatma|qayd)\w*\s+(yarat|qo'sh|qo'y|yoz)\w*)$/;
   if (!addressed && memoryEnd.test(full) && !/^(eslab|yodda|xotiraga|vazifa|topshiriq|eslatma|qayd)/.test(t)) t = full;
 
-  if (/^(salom|assalomu|assalom|hey|xayrli)/.test(t)) return "hello";
+  if (/^(salom|salam|assalom|assalomu|hey|xayrli|qalay|yaxshimisiz)/.test(t) || t === "") return "hello";
 
   // What am I working on (yesterday)?
   if (/(nima|nimalar)\s+(ustida|bilan)\s+ishla|nima\s+qil(yapman|ayapman|ayotgan|dim|gan)|nimalar\s+qildim|hozir\s+nima/.test(t)) {

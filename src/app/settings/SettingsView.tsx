@@ -5,6 +5,7 @@ import { PageFrame } from "@/components/layout/SectionPage";
 import { PanelTitle } from "@/components/layout/ui";
 import { clearLocal } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
+import { testVoice } from "@/services/jarvis";
 import { speechRecognitionSupported } from "@/voice/push-to-talk";
 
 const noopSubscribe = () => () => {};
@@ -57,6 +58,12 @@ export default function SettingsView() {
             </select>
           </label>
           <p className="mt-1 text-[12px] text-ink-faint">Voice input works best in Google Chrome.</p>
+          <button
+            onClick={() => void testVoice()}
+            className="mt-3 border border-line px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wider text-ink-dim hover:border-accent/60 hover:text-accent"
+          >
+            Test voice
+          </button>
           <button
             onClick={() => {
               if (confirm("Delete the notes, tasks and memories you created in this browser? This cannot be undone.")) {
