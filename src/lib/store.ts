@@ -29,6 +29,9 @@ export type Focus =
   | { kind: "path"; nodes: string[] }
   | { kind: "query"; nodes: string[]; anchors: string[]; label: string };
 
+export type VoiceLang = "uz-UZ" | "en-US";
+export const VOICE_LANG_KEY = "jarvis.voice-lang.v1";
+
 export interface AppStatus {
   mode: "demo" | "ai";
   model: string;
@@ -51,6 +54,8 @@ interface JarvisStore {
   hud: HudState;
   hudDetail: string;
   voiceReplies: boolean;
+  /** Language the microphone listens in (and JARVIS speaks back in). */
+  voiceLang: VoiceLang;
 
   paletteOpen: boolean;
   graphError: string | null;
@@ -69,6 +74,7 @@ interface JarvisStore {
   openViewer: (id: string | null) => void;
   setHud: (s: HudState, detail?: string) => void;
   setVoiceReplies: (v: boolean) => void;
+  setVoiceLang: (l: VoiceLang) => void;
   setPaletteOpen: (v: boolean) => void;
   setGraphError: (e: string | null) => void;
   addMessage: (role: ChatMessage["role"], text: string) => void;
@@ -90,6 +96,7 @@ export const useJarvis = create<JarvisStore>((set) => ({
   hud: "idle",
   hudDetail: "",
   voiceReplies: false,
+  voiceLang: "uz-UZ",
   paletteOpen: false,
   graphError: null,
   messages: [],
@@ -113,6 +120,14 @@ export const useJarvis = create<JarvisStore>((set) => ({
   openViewer: (viewer) => set({ viewer }),
   setHud: (hud, hudDetail = "") => set({ hud, hudDetail }),
   setVoiceReplies: (voiceReplies) => set({ voiceReplies }),
+  setVoiceLang: (voiceLang) => {
+    try {
+      localStorage.setItem(VOICE_LANG_KEY, voiceLang);
+    } catch {
+      /* storage unavailable: setting lasts for this visit only */
+    }
+    set({ voiceLang });
+  },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setGraphError: (graphError) => set({ graphError }),
   addMessage: (role, text) =>

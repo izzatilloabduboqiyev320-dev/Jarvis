@@ -1,5 +1,6 @@
 import { CATEGORIES } from "@/knowledge/categories";
-import { describePath, findPath, neighborhood, type KnowledgeGraph } from "@/knowledge/graph";
+import { describePath, edgeBetween, findPath, neighborhood, type KnowledgeGraph } from "@/knowledge/graph";
+import { CATEGORY_NAMES_UZ, detectLang, normalizeApostrophes, relationUz, relativeDayUz, uzToEn, type Lang } from "@/knowledge/uzbek";
 import type { NodeCategory } from "@/types/graph";
 
 /**
@@ -30,6 +31,8 @@ export interface CreateSpec {
 export interface QueryResult {
   intent: QueryIntent;
   answer: string;
+  /** Language the answer is written in. */
+  lang?: Lang;
   /** Nodes to highlight in the graph. */
   nodes: string[];
   /** The main entities the query was about. */
@@ -94,7 +97,8 @@ export function findMentions(graph: KnowledgeGraph, text: string): string[] {
     candidates.add(a.label.toLowerCase().replace(/\s*\([^)]*\)/, "").replace(/[$]/g, ""));
     for (const c of candidates) {
       if (c.length < 2) continue;
-      const re = new RegExp(`(^|[^a-z0-9])${escapeRe(c)}(s)?(?=[^a-z0-9]|$)`, "i");
+      // Allow English plural and Uzbek case suffixes: "ICTga", "Claude'ning", "YouTubedagi".
+      const re = new RegExp(`(^|[^a-z0-9])${escapeRe(c)}(s|'?(ga|ka|qa|ni|da|dan|ning|dagi|lar|larni|larga|ning|si|i))?(?=[^a-z0-9']|$)`, "i");
       const m = re.exec(t);
       if (m) {
         const start = m.index + m[1].length;
@@ -176,10 +180,10 @@ function categoriesIn(text: string): NodeCategory[] {
   return [...cats];
 }
 
-function labelList(graph: KnowledgeGraph, ids: string[], max = 6): string {
+function labelList(graph: KnowledgeGraph, ids: string[], max = 6, lang: Lang = "en"): string {
   const all = [...new Set(ids.map((id) => graph.getNodeAttribute(id, "label")))];
   const labels = all.slice(0, max);
-  const more = all.length > max ? ` and ${all.length - max} more` : "";
+  const more = all.length > max ? (lang === "uz" ? ` va yana ${all.length - max} ta` : ` and ${all.length - max} more`) : "";
   return labels.join(", ") + more;
 }
 
@@ -191,8 +195,9 @@ function rank(graph: KnowledgeGraph, ids: Iterable<string>): string[] {
   });
 }
 
-function relativeDay(iso: string): string {
+function relativeDay(iso: string, lang: Lang = "en"): string {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (lang === "uz") return relativeDayUz(days);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return `${days} days ago`;
@@ -201,35 +206,53 @@ function relativeDay(iso: string): string {
 export interface QueryContext {
   /** Currently selected node — resolves "this project", "this file". */
   selected?: string | null;
+  /** Force a language; otherwise detected from the text. */
+  lang?: Lang;
+}
+
+function pathText(graph: KnowledgeGraph, path: string[], lang: Lang): string {
+  if (lang === "en") return describePath(graph, path);
+  const parts: string[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const e = edgeBetween(graph, path[i], path[i + 1]);
+    if (!e) continue;
+    parts.push(relationUz(graph.getNodeAttribute(graph.source(e), "label"), graph.getEdgeAttribute(e, "relation"), graph.getNodeAttribute(graph.target(e), "label")));
+  }
+  return parts.join("; ");
 }
 
 export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext = {}): QueryResult {
-  const text = normalize(raw);
-  const empty: QueryResult = { intent: "empty", answer: "", nodes: [], anchors: [] };
+  const lang: Lang = ctx.lang ?? detectLang(raw);
+  const uz = lang === "uz";
+  const text = uz ? normalize(uzToEn(raw)) : normalize(normalizeApostrophes(raw));
+  const empty: QueryResult = { intent: "empty", answer: "", nodes: [], anchors: [], lang };
   if (!text) return empty;
   const sel = ctx.selected && graph.hasNode(ctx.selected) ? ctx.selected : null;
 
   if (/^(hi|hello|hey|yo|salom|good (morning|evening|afternoon))\b/.test(text) || text === "") {
-    return { ...empty, intent: "greeting", answer: "Yes? I'm online. Ask me about your projects, knowledge or files." };
+    return { ...empty, intent: "greeting", answer: uz ? "Ha? Men shu yerdaman. Loyihalaringiz, bilimlaringiz yoki fayllaringiz haqida so'rang." : "Yes? I'm online. Ask me about your projects, knowledge or files." };
   }
 
   // ── Create: remember / task / note ────────────────────────────────
   const create = text.match(/^(remember( that)?|note( that)?|add (a )?note|create (a )?task|add (a )?task|new task|todo|remind me to)[:\s,]*(.*)$/);
   if (create) {
     const verb = create[1];
-    const body = raw.replace(/^\s*(hey\s+)?jarvis[\s,.:!-]*/i, "").slice(verb.length).replace(/^[\s:,]*(that\s+)?/i, "").trim();
+    const body = uz ? create[create.length - 1].trim() : raw.replace(/^\s*(hey\s+)?jarvis[\s,.:!-]*/i, "").slice(verb.length).replace(/^[\s:,]*(that\s+)?/i, "").trim();
     const category: CreateSpec["category"] = /task|todo|remind/.test(verb) ? "task" : /note/.test(verb) ? "note" : "memory";
     if (!body) {
-      return { ...empty, intent: "create", answer: `What should the ${category} say? Try: "${verb} …"` };
+      return { ...empty, intent: "create", answer: uz ? "Nimani saqlay? Masalan: \"JARVIS muhim loyiha ekanini eslab qol\"" : `What should the ${category} say? Try: "${verb} …"` };
     }
     const links = findMentions(graph, body);
-    if (sel && /\b(this|it)\b/i.test(body) && !links.includes(sel)) links.unshift(sel);
+    if (sel && /\b(this|it|bu|shu|buni|shuni)\b/i.test(body) && !links.includes(sel)) links.unshift(sel);
     const label = body.length > 48 ? body.slice(0, 46).trimEnd() + "…" : body;
-    const linkText = links.length ? ` and linked it to ${labelList(graph, links, 4)}` : "";
-    const noun = category === "memory" ? "Memory saved" : category === "task" ? "Task created" : "Note added";
+    const linkText = links.length ? (uz ? ` va ${labelList(graph, links, 4, lang)} bilan bog'landi` : ` and linked it to ${labelList(graph, links, 4, lang)}`) : "";
+    const noun = uz
+      ? category === "memory" ? "Xotiraga saqlandi" : category === "task" ? "Vazifa yaratildi" : "Eslatma qo'shildi"
+      : category === "memory" ? "Memory saved" : category === "task" ? "Task created" : "Note added";
     return {
       intent: "create",
       answer: `${noun}${linkText}.`,
+      lang,
       nodes: links,
       anchors: links,
       create: { category, label: label.charAt(0).toUpperCase() + label.slice(1), content: body, links },
@@ -251,13 +274,16 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
         const hops = path.length - 1;
         return {
           intent: "path",
-          answer: `${la} and ${lb} are ${hops === 1 ? "directly connected" : `connected in ${hops} steps`}: ${describePath(graph, path)}.`,
+          answer: uz
+            ? `${la} va ${lb} ${hops === 1 ? "to'g'ridan-to'g'ri bog'langan" : `${hops} qadamda bog'langan`}: ${pathText(graph, path, lang)}.`
+            : `${la} and ${lb} are ${hops === 1 ? "directly connected" : `connected in ${hops} steps`}: ${describePath(graph, path)}.`,
+          lang,
           nodes: path,
           anchors: [a, b],
           path,
         };
       }
-      return { ...empty, intent: "path", answer: "I found both, but there is no connection between them in the graph yet.", anchors: [a, b], nodes: [a, b] };
+      return { ...empty, intent: "path", answer: uz ? "Ikkalasini topdim, lekin grafda ular orasida hali bog'lanish yo'q." : "I found both, but there is no connection between them in the graph yet.", anchors: [a, b], nodes: [a, b] };
     }
     // fall through to topic search if the entities weren't resolved
   }
@@ -273,13 +299,16 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
     );
     const recent = byRecent.slice(0, 4).map((id) => {
       const n = graph.getNodeAttribute(id, "node");
-      return `${n.label} (${relativeDay(n.updatedAt)})`;
+      return `${n.label} (${relativeDay(n.updatedAt, lang)})`;
     });
     const yesterday = /yesterday/.test(text);
-    const lead = yesterday ? "Most recent activity" : "You're working on";
+    const lead = uz ? (yesterday ? "Oxirgi faoliyat" : "Siz hozir shular ustida ishlayapsiz") : yesterday ? "Most recent activity" : "You're working on";
     return {
       intent: "working-on",
-      answer: `${lead}: ${recent.join(", ")}. ${projects.length} active projects and ${tasks.length} open tasks in total.`,
+      lang,
+      answer: uz
+        ? `${lead}: ${recent.join(", ")}. Jami ${projects.length} ta faol loyiha va ${tasks.length} ta ochiq vazifa.`
+        : `${lead}: ${recent.join(", ")}. ${projects.length} active projects and ${tasks.length} open tasks in total.`,
       nodes: graph.hasNode("izzatillo") ? ["izzatillo", ...byRecent] : byRecent,
       anchors: byRecent.slice(0, 4),
     };
@@ -290,7 +319,7 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
   if (open) {
     const target = /^(this|it|this (project|file|note|node))$/.test(open[1]) ? sel : resolveEntity(graph, open[1]);
     if (target) {
-      return { intent: "open", answer: `Opening ${graph.getNodeAttribute(target, "label")}.`, nodes: [target], anchors: [target], open: target };
+      return { intent: "open", lang, answer: uz ? `${graph.getNodeAttribute(target, "label")} ochilmoqda.` : `Opening ${graph.getNodeAttribute(target, "label")}.`, nodes: [target], anchors: [target], open: target };
     }
     if (/^(agents|skills|settings|files|memory|tasks|chat)$/.test(open[1])) {
       return { ...empty, intent: "open", answer: `Opening ${open[1]}.`, open: `page:${open[1]}` };
@@ -299,7 +328,7 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
 
   // ── Needs the AI brain / later phases ─────────────────────────────
   if (/\b(search|look up|google)\b.*\b(web|internet|online)\b|^(browse|research)\b/.test(text)) {
-    return { ...empty, intent: "needs-ai", answer: "Web search needs the Claude brain and the Web Search tool (Phase 2). For now I can search your knowledge graph." };
+    return { ...empty, intent: "needs-ai", answer: uz ? "Internetdan qidirish uchun Claude va Web Search vositasi kerak (2-bosqich). Hozircha bilim grafingiz bo'yicha qidira olaman." : "Web search needs the Claude brain and the Web Search tool (Phase 2). For now I can search your knowledge graph." };
   }
   if (/\bsummari[sz]e\b/.test(text)) {
     const target = sel && /\b(this|it)\b/.test(text) ? sel : findMentions(graph, text)[0] ?? sel;
@@ -308,12 +337,13 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
       const body = n.content ? ` Content: ${n.content.replace(/\n/g, " ")}` : "";
       return {
         intent: "topic",
-        answer: `${n.label}: ${n.description}${body} (Full AI summaries arrive with Claude in Phase 2.)`,
+        answer: `${n.label}: ${n.description}${body} ${uz ? "(To'liq AI xulosalar 2-bosqichda Claude bilan keladi.)" : "(Full AI summaries arrive with Claude in Phase 2.)"}`,
+        lang,
         nodes: [...neighborhood(graph, [target], 1)],
         anchors: [target],
       };
     }
-    return { ...empty, intent: "needs-ai", answer: "Select a file or note first, then ask me to summarise it." };
+    return { ...empty, intent: "needs-ai", answer: uz ? "Avval fayl yoki eslatmani tanlang, keyin xulosa so'rang." : "Select a file or note first, then ask me to summarise it." };
   }
 
   // ── Topic search (default) ────────────────────────────────────────
@@ -363,19 +393,22 @@ export function runQuery(graph: KnowledgeGraph, raw: string, ctx: QueryContext =
 
   const ranked = rank(graph, result);
   if (!ranked.length) {
-    return { ...empty, intent: "topic", answer: `I couldn't find anything about "${raw.trim()}" in your knowledge graph yet.` };
+    return { ...empty, intent: "topic", answer: uz ? `Bilim grafida "${raw.trim()}" haqida hali hech narsa topilmadi.` : `I couldn't find anything about "${raw.trim()}" in your knowledge graph yet.` };
   }
   const focusLabel = anchors.length ? labelList(graph, anchors, 3) : kws.slice(0, 3).join(", ");
   const catLabel = cats.length && !decision ? cats.map((c) => CATEGORIES[c].plural.toLowerCase()).join(" and ") : "nodes";
   const shown = ranked.filter((id) => !anchors.includes(id));
-  let answer = `Found ${cats.length ? shown.length : ranked.length} ${catLabel} related to ${focusLabel || "your query"}`;
-  answer += shown.length ? `: ${labelList(graph, shown)}.` : ".";
+  const count = cats.length ? shown.length : ranked.length;
+  let answer = uz
+    ? `${focusLabel || "So'rovingiz"} bilan bog'liq ${count} ta ${cats.length && !decision ? cats.map((c) => CATEGORY_NAMES_UZ[c] ?? c).join(" va ") : "tugun"} topildi`
+    : `Found ${count} ${catLabel} related to ${focusLabel || "your query"}`;
+  answer += shown.length ? `: ${labelList(graph, shown, 6, lang)}.` : ".";
   if (decision) {
     const decisions = ranked.filter((id) => graph.getNodeAttribute(id, "category") === "memory" || graph.getNodeAttribute(id, "category") === "note");
     const withContent = decisions.map((id) => graph.getNodeAttribute(id, "node")).find((n) => n.content || n.category === "memory");
-    if (withContent) answer = `Latest decision on record — ${withContent.label}: ${withContent.content ?? withContent.description}`;
+    if (withContent) answer = `${uz ? "Oxirgi qayd etilgan qaror" : "Latest decision on record"} — ${withContent.label}: ${withContent.content ?? withContent.description}`;
   }
-  return { intent: "topic", answer, nodes: ranked, anchors: anchors.length ? anchors : ranked.slice(0, 1) };
+  return { intent: "topic", lang, answer, nodes: ranked, anchors: anchors.length ? anchors : ranked.slice(0, 1) };
 }
 
 /** Quick label search for autocomplete. */

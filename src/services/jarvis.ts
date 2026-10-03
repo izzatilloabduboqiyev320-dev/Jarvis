@@ -28,7 +28,7 @@ export function setNavigator(fn: (path: string) => void) {
   navigate = fn;
 }
 
-export async function askJarvis(input: string): Promise<QueryResult | null> {
+export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}): Promise<QueryResult | null> {
   const text = input.trim();
   if (!text || busy) return null;
   busy = true;
@@ -40,7 +40,7 @@ export async function askJarvis(input: string): Promise<QueryResult | null> {
     await wait(320);
 
     const graph = getGraph();
-    const result = runQuery(graph, text, { selected: useJarvis.getState().selected });
+    const result = runQuery(graph, text, { selected: useJarvis.getState().selected, lang: opts.lang });
     s.log("search", `Searched knowledge graph — intent: ${result.intent}`);
     if (result.nodes.length) s.log("result", `Found ${result.nodes.length} related node${result.nodes.length === 1 ? "" : "s"}`);
 
@@ -59,7 +59,7 @@ export async function askJarvis(input: string): Promise<QueryResult | null> {
     s.addMessage("jarvis", result.answer);
     s.log("ai", `JARVIS responded (${useJarvis.getState().status.mode === "demo" ? "demo brain" : "Claude"})`);
     s.setHud("speaking", "Responding");
-    if (useJarvis.getState().voiceReplies) await speak(result.answer);
+    if (useJarvis.getState().voiceReplies) await speak(result.answer, result.lang ?? "en");
     else await wait(Math.min(2400, 700 + result.answer.length * 12));
     return result;
   } catch (err) {

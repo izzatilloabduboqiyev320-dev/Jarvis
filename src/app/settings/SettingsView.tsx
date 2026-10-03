@@ -13,6 +13,8 @@ export default function SettingsView() {
   const status = useJarvis((s) => s.status);
   const voiceReplies = useJarvis((s) => s.voiceReplies);
   const setVoiceReplies = useJarvis((s) => s.setVoiceReplies);
+  const voiceLang = useJarvis((s) => s.voiceLang);
+  const setVoiceLang = useJarvis((s) => s.setVoiceLang);
   const sttSupported = useSyncExternalStore(noopSubscribe, speechRecognitionSupported, () => false);
 
   return (
@@ -42,6 +44,19 @@ export default function SettingsView() {
             <input type="checkbox" checked={voiceReplies} onChange={(e) => setVoiceReplies(e.target.checked)} className="accent-[var(--color-accent)]" />
             Speak JARVIS replies aloud
           </label>
+          <label className="mt-4 flex items-center gap-3 text-[13px] text-ink-dim">
+            Voice language
+            <select
+              value={voiceLang}
+              onChange={(e) => setVoiceLang(e.target.value as typeof voiceLang)}
+              className="border border-line bg-black px-2 py-1 font-mono text-[12px] text-ink"
+              data-testid="voice-lang-select"
+            >
+              <option value="uz-UZ">O&apos;zbekcha</option>
+              <option value="en-US">English</option>
+            </select>
+          </label>
+          <p className="mt-1 text-[12px] text-ink-faint">Voice input works best in Google Chrome.</p>
           <button
             onClick={() => {
               if (confirm("Delete the notes, tasks and memories you created in this browser? This cannot be undone.")) {

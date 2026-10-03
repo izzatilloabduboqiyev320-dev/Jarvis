@@ -27,11 +27,26 @@ const queries = [
   "what did I say about Claude?",
   "open TradingView",
   "xyzzy",
+  // Uzbek
+  "Jarvis, nima ustida ishlayapman?",
+  "Kecha nima qilayotgan edim?",
+  "ICT bilan bog'liq hamma narsani ko'rsat",
+  "Claude bilan bog'liq loyihalarni ko'rsat",
+  "ICT ga oid fayllarni top",
+  "Claude va YouTube loyihasi qanday bog'langan?",
+  "JARVIS muhim loyiha ekanini eslab qol",
+  "Eslab qol: men har kuni London sessiyasida savdo qilaman",
+  "MSNR backtest qilish degan vazifa yarat",
+  "TradingView ni och",
+  "Grafik haqida qanday qaror qildik?",
+  "Internetdan raqobatchilarni qidir",
+  "Salom Jarvis",
 ];
 let failed = 0;
 for (const q of queries) {
   const r = runQuery(graph, q, { selected: "p-jarvis" });
   if (r.intent !== "needs-ai" && !r.answer) failed++;
+  if (/[ʻ'‘]|nima|ko'rsat|bog'l|eslab|yarat|qidir|salom|och$/i.test(q) && q !== "open TradingView" && r.lang !== "uz") failed++;
   console.log(`\n> ${q}\n  [${r.intent}] ${r.nodes.length} nodes — ${r.answer}`);
 }
 process.exit(failed ? 1 : 0);

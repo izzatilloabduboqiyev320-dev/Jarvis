@@ -6,7 +6,7 @@ import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
 import NavRail from "@/components/layout/NavRail";
 import { loadGraph } from "@/lib/graph-instance";
-import { useJarvis, type AppStatus } from "@/lib/store";
+import { useJarvis, type AppStatus, VOICE_LANG_KEY } from "@/lib/store";
 import { setNavigator } from "@/services/jarvis";
 import type { KGData } from "@/types/graph";
 
@@ -29,6 +29,12 @@ async function boot() {
   } catch (err) {
     s.log("error", `Could not load the knowledge graph: ${(err as Error).message}`);
     s.setHud("error", "Knowledge graph unavailable");
+  }
+  try {
+    const lang = localStorage.getItem(VOICE_LANG_KEY);
+    if (lang === "uz-UZ" || lang === "en-US") s.setVoiceLang(lang);
+  } catch {
+    /* storage unavailable: keep the default */
   }
   try {
     const res = await fetch("/api/status");

@@ -22,6 +22,9 @@ export default function JarvisHud() {
   const detail = useJarvis((s) => s.hudDetail);
   const status = useJarvis((s) => s.status);
   const setPaletteOpen = useJarvis((s) => s.setPaletteOpen);
+  const voiceLang = useJarvis((s) => s.voiceLang);
+  const setVoiceLang = useJarvis((s) => s.setVoiceLang);
+  const uz = voiceLang === "uz-UZ";
   const rootRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const [interim, setInterim] = useState("");
@@ -43,8 +46,9 @@ export default function JarvisHud() {
       return;
     }
     stopSpeaking();
+    const lang = s.voiceLang;
     s.setHud("listening", "Push-to-talk");
-    s.log("system", "Microphone on — listening");
+    s.log("system", `Microphone on — listening (${lang === "uz-UZ" ? "O'zbekcha" : "English"})`);
     setInterim("");
     stopRef.current = startPushToTalk({
       onInterim: setInterim,
@@ -52,7 +56,7 @@ export default function JarvisHud() {
         s.log("system", "Speech recognised");
         setInterim("");
         s.setHud("thinking");
-        void askJarvis(text);
+        void askJarvis(text, { lang: lang === "uz-UZ" ? "uz" : "en" });
       },
       onError: (msg) => {
         s.log("error", msg);
@@ -66,12 +70,12 @@ export default function JarvisHud() {
         setInterim("");
         if (useJarvis.getState().hud === "listening") useJarvis.getState().setHud("idle");
       },
-    });
+    }, lang);
   };
 
   const hint =
     hud === "listening"
-      ? interim || 'say "Jarvis..."'
+      ? interim || (uz ? "gapiring..." : 'say "Jarvis..."')
       : hud === "error"
         ? detail || "Something went wrong"
         : hud === "idle"
@@ -138,6 +142,16 @@ export default function JarvisHud() {
           <span className="mx-1 text-ink-faint/60">·</span>
           {status.mode === "demo" ? "demo mode" : "online"}
         </div>
+        <div className="ml-auto flex items-center gap-1">
+        <button
+          onClick={() => setVoiceLang(uz ? "en-US" : "uz-UZ")}
+          disabled={hud === "listening"}
+          className="flex h-6 items-center border border-line px-1.5 font-mono text-[9.5px] uppercase tracking-wider text-ink-dim transition hover:border-accent/60 hover:text-accent disabled:opacity-40"
+          title={uz ? "Ovoz tili: o'zbekcha (inglizchaga o'tish uchun bosing)" : "Voice language: English (click for Uzbek)"}
+          data-testid="voice-lang"
+        >
+          {uz ? "UZ" : "EN"}
+        </button>
         <button
           onClick={toggleMic}
           className={`flex h-6 items-center gap-1 border px-2 font-mono text-[9.5px] uppercase tracking-wider transition ${
@@ -152,6 +166,7 @@ export default function JarvisHud() {
           </svg>
           {hud === "listening" ? "Stop" : "Talk"}
         </button>
+        </div>
       </div>
     </div>
   );

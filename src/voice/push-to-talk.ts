@@ -41,20 +41,40 @@ export function speechRecognitionSupported(): boolean {
   return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
 }
 
-const ERRORS: Record<string, string> = {
-  "not-allowed": "Microphone permission was denied. Allow microphone access for this site in your browser settings, then try again.",
-  "service-not-allowed": "Speech recognition is blocked by the browser. Try Chrome or Edge, served from localhost.",
-  "no-speech": "I didn't hear anything. Hold the mic button and speak, or type with ⌘K.",
-  "audio-capture": "No microphone was found. Check that one is connected and selected in system settings.",
-  network: "The browser's speech service could not be reached. Check your internet connection.",
+type Messages = Record<string, string>;
+
+const ERRORS: Record<"en" | "uz", Messages> = {
+  en: {
+    "not-allowed": "Microphone permission was denied. Allow microphone access for this site in your browser settings, then try again.",
+    "service-not-allowed": "Speech recognition is blocked by the browser. Try Chrome or Edge, served from localhost.",
+    "no-speech": "I didn't hear anything. Press Talk and speak, or type with ⌘K.",
+    "audio-capture": "No microphone was found. Check that one is connected and selected in system settings.",
+    network: "The browser's speech service could not be reached. Check your internet connection.",
+    "language-not-supported": "This browser can't recognise this language. Use Google Chrome.",
+    unsupported: "Speech recognition isn't supported in this browser. Use Chrome or Edge, or type with ⌘K.",
+    start: "Could not start the microphone",
+    other: "Speech recognition error",
+  },
+  uz: {
+    "not-allowed": "Mikrofonga ruxsat berilmagan. Brauzer sozlamalarida bu sayt uchun mikrofonga ruxsat bering va qayta urinib ko'ring.",
+    "service-not-allowed": "Brauzer ovozni tanishni bloklayapti. Google Chrome'da oching.",
+    "no-speech": "Hech narsa eshitmadim. Talk tugmasini bosib gapiring yoki ⌘K bilan yozing.",
+    "audio-capture": "Mikrofon topilmadi. Mikrofon ulanganini tekshiring.",
+    network: "Brauzerning ovoz xizmatiga ulanib bo'lmadi. Internetni tekshiring.",
+    "language-not-supported": "Bu brauzer o'zbek tilini taniy olmaydi. Google Chrome'dan foydalaning.",
+    unsupported: "Bu brauzer ovozni tanimaydi. Google Chrome'dan foydalaning yoki ⌘K bilan yozing.",
+    start: "Mikrofonni yoqib bo'lmadi",
+    other: "Ovozni tanishda xato",
+  },
 };
 
 /** Starts listening. Returns a stop function. */
-export function startPushToTalk(h: PushToTalkHandlers): () => void {
+export function startPushToTalk(h: PushToTalkHandlers, lang = "uz-UZ"): () => void {
+  const msg = ERRORS[lang.startsWith("uz") ? "uz" : "en"];
   const w = window as unknown as Record<string, new () => RecognitionLike>;
   const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
   if (!Ctor) {
-    h.onError("Speech recognition isn't supported in this browser. Use Chrome or Edge, or type with ⌘K.");
+    h.onError(msg.unsupported);
     h.onEnd();
     return () => {};
   }
@@ -101,7 +121,7 @@ export function startPushToTalk(h: PushToTalkHandlers): () => void {
     });
 
   const rec = new Ctor();
-  rec.lang = "en-US";
+  rec.lang = lang;
   rec.interimResults = true;
   rec.continuous = false;
   rec.onresult = (e) => {
@@ -116,7 +136,7 @@ export function startPushToTalk(h: PushToTalkHandlers): () => void {
   };
   rec.onerror = (e) => {
     if (e.error === "aborted") return;
-    h.onError(ERRORS[e.error] ?? `Speech recognition error: ${e.error}`);
+    h.onError(msg[e.error] ?? `${msg.other}: ${e.error}`);
   };
   rec.onend = () => {
     stopMeter();
@@ -127,7 +147,7 @@ export function startPushToTalk(h: PushToTalkHandlers): () => void {
     rec.start();
   } catch (err) {
     stopMeter();
-    h.onError(`Could not start the microphone: ${(err as Error).message}`);
+    h.onError(`${msg.start}: ${(err as Error).message}`);
     h.onEnd();
   }
 
