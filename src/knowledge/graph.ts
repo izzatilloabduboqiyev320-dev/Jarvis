@@ -1,5 +1,6 @@
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import noverlap from "graphology-layout-noverlap";
 import circlepack from "graphology-layout/circlepack";
 import { CATEGORIES } from "@/knowledge/categories";
 import type { KGData, KGEdge, KGNode, NodeCategory } from "@/types/graph";
@@ -27,12 +28,12 @@ export interface GraphEdgeAttrs {
 export type KnowledgeGraph = Graph<GraphNodeAttrs, GraphEdgeAttrs>;
 
 // Premultiplied (sigma blends edges with premultiplied alpha).
-export const EDGE_COLOR = "rgba(34, 56, 63, 0.28)";
+export const EDGE_COLOR = "rgba(48, 90, 98, 0.42)";
 
 export function nodeSize(importance: number, degree: number, order = 0): number {
   // Shrink nodes as the graph grows so large graphs stay readable.
   const scale = order > 2000 ? 0.4 : order > 600 ? 0.6 : 1;
-  return (2.2 + importance * 9 + Math.min(Math.sqrt(degree) * 0.9, 6)) * scale;
+  return (3 + importance * 10 + Math.min(Math.sqrt(degree) * 1.1, 7)) * scale;
 }
 
 export function createGraph(data: KGData): KnowledgeGraph {
@@ -69,7 +70,7 @@ export function addEdgeToGraph(graph: KnowledgeGraph, e: KGEdge) {
   graph.addDirectedEdgeWithKey(e.id, e.source, e.target, {
     relation: e.relation,
     weight: e.weight,
-    size: 0.4 + e.weight * 0.9,
+    size: 0.8 + e.weight * 1.1,
     color: EDGE_COLOR,
     edge: e,
   });
@@ -277,17 +278,30 @@ export function computeLayout(graph: KnowledgeGraph, name: LayoutName, center?: 
   const copy = graph.copy();
   seedByCategory(copy as KnowledgeGraph);
   const settings = forceAtlas2.inferSettings(copy);
-  return forceAtlas2(copy, {
+  const forced = forceAtlas2(copy, {
     iterations: order > 2000 ? 80 : order > 500 ? 200 : 400,
     getEdgeWeight: "weight",
     settings: {
       ...settings,
-      gravity: 1.2,
+      gravity: 0.8,
       scalingRatio: 12,
       slowDown: 2,
       linLogMode: false,
       adjustSizes: false,
       barnesHutOptimize: order > 300,
     },
+  });
+  if (order > 1500) return forced;
+  // Spread nodes so each has room for its circle and label, like a focused view.
+  for (const [id, p] of Object.entries(forced)) copy.mergeNodeAttributes(id, p);
+  const box = Object.values(forced);
+  const extent = Math.max(
+    Math.max(...box.map((p) => p.x)) - Math.min(...box.map((p) => p.x)),
+    Math.max(...box.map((p) => p.y)) - Math.min(...box.map((p) => p.y)),
+  );
+  return noverlap(copy, {
+    maxIterations: 300,
+    inputReducer: (id, a) => ({ x: a.x, y: a.y, size: extent * (0.035 + 0.075 * graph.getNodeAttribute(id, "importance") ** 2) }),
+    settings: { margin: extent * 0.02, ratio: 1, speed: 3 },
   });
 }

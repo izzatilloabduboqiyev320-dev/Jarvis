@@ -30,7 +30,8 @@ function bboxOf(pos: Record<string, { x: number; y: number }>): BBox {
   }
   const px = (x1 - x0) * 0.04 || 1;
   const py = (y1 - y0) * 0.04 || 1;
-  return { x: [x0 - px, x1 + px], y: [y0 - py, y1 + py] };
+  // Extra room on the right so labels of the right-most nodes are not clipped.
+  return { x: [x0 - px, x1 + px + (x1 - x0) * 0.12], y: [y0 - py, y1 + py] };
 }
 
 function hashPhase(id: string) {
@@ -86,6 +87,9 @@ function drawHover(
   ctx.textBaseline = "alphabetic";
 }
 
+/** Label boxes drawn in the current frame — used to skip overlapping labels. */
+let drawnLabels: [number, number, number, number][] = [];
+
 function drawLabel(
   ctx: CanvasRenderingContext2D,
   data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
@@ -96,10 +100,15 @@ function drawLabel(
   if (!data.label || highlighted) return;
   const size = settings.labelSize;
   ctx.font = `400 ${size}px ${settings.labelFont}`;
+  const x = data.x + data.size + 4;
+  const w = ctx.measureText(data.label).width;
+  const box: [number, number, number, number] = [x - 2, data.y - size / 2 - 2, x + w + 2, data.y + size / 2 + 2];
+  if (drawnLabels.some((b) => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) return;
+  drawnLabels.push(box);
   ctx.fillStyle = "rgba(184, 204, 214, 0.82)";
   ctx.shadowColor = "rgba(0,0,0,0.9)";
   ctx.shadowBlur = 4;
-  ctx.fillText(data.label, data.x + data.size + 4, data.y + size / 3);
+  ctx.fillText(data.label, x, data.y + size / 3);
   ctx.shadowBlur = 0;
 }
 
@@ -126,6 +135,14 @@ export default function KnowledgeGraph() {
     let dragged: string | null = null;
     let dragMoved = false;
     let floatAmp = 0;
+    // Always label the most important nodes (like a focused view); the rest
+    // get labels as you zoom in.
+    const labelCut = (() => {
+      const imps: number[] = [];
+      graph.forEachNode((_, a) => imps.push(a.importance));
+      imps.sort((a, b) => b - a);
+      return imps[Math.min(imps.length - 1, 22)] ?? 1;
+    })();
     let t = 0;
 
     const computeFocus = (f: Focus) => {
@@ -158,18 +175,18 @@ export default function KnowledgeGraph() {
         nodeProgramClasses: { glow: GlowNodeProgram },
         defaultEdgeType: "line",
         labelFont,
-        labelSize: 11,
+        labelSize: 12,
         labelWeight: "400",
         labelColor: { color: "#b8ccd6" },
-        labelDensity: 0.45,
-        labelGridCellSize: 140,
-        labelRenderedSizeThreshold: 9,
+        labelDensity: large ? 0.4 : 0.8,
+        labelGridCellSize: large ? 140 : 120,
+        labelRenderedSizeThreshold: large ? 9 : 10,
         defaultDrawNodeHover: drawHover,
         defaultDrawNodeLabel: drawLabel,
         minCameraRatio: 0.04,
         maxCameraRatio: 5,
         zIndex: true,
-        stagePadding: 40,
+        stagePadding: 48,
         hideEdgesOnMove: large,
         hideLabelsOnMove: large,
         minEdgeThickness: 0.6,
@@ -187,6 +204,7 @@ export default function KnowledgeGraph() {
             res.y = data.y + Math.cos(t * 0.00035 + ph * 1.7) * floatAmp;
           }
           const active = hoverSet ?? focusSet;
+          if (!active && !large && data.importance >= labelCut) res.forceLabel = true;
           if (active) {
             if (active.has(node)) {
               res.zIndex = 2;
@@ -241,6 +259,9 @@ export default function KnowledgeGraph() {
     }
 
     const camera = sigma.getCamera();
+    sigma.on("beforeRender", () => {
+      drawnLabels = [];
+    });
     // Debug handle for automated UI checks: `/graph?debug`
     if (process.env.NODE_ENV !== "production" || window.location.search.includes("debug")) {
       (window as unknown as Record<string, unknown>).__jarvis = { sigma, graph };
