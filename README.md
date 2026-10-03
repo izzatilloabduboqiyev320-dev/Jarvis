@@ -19,8 +19,8 @@ No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local b
 ### Chat with Claude
 
 1. Create a key at https://console.anthropic.com → API Keys (billing must be set up there).
-2. Copy `.env.example` to `.env.local` and paste the key: `ANTHROPIC_API_KEY=sk-ant-...`
-3. Restart `npm run dev`. The HUD shows "online" and the chat (bottom-right of the graph, or /chat) answers with Claude, using the matching parts of your knowledge graph as context.
+2. In JARVIS open **Settings → Claude API key**, paste the key and press **Saqlash** (Save). JARVIS checks the key, writes it to `.env.local` and switches to Claude immediately, no restart needed. (Or edit `.env.local` by hand and restart.)
+3. The HUD shows "online" and the chat (bottom-right of the graph, or /chat) answers with Claude, using the matching parts of your knowledge graph as context.
 
 The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never sent to the browser. `.env.local` is git-ignored. Optional: `JARVIS_MODEL` picks another Claude model.
 

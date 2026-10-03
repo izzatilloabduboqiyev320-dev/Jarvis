@@ -9,6 +9,11 @@ import type { ChatRequest } from "@/ai/chat-types";
  */
 
 let client: Anthropic | null = null;
+/** Called after the key changes in Settings. */
+export function resetClaudeClient() {
+  client = null;
+}
+
 function getClient(): Anthropic {
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() });
   return client;

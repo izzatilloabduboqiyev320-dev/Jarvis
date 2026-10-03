@@ -6,7 +6,8 @@ import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
 import NavRail from "@/components/layout/NavRail";
 import { loadGraph } from "@/lib/graph-instance";
-import { useJarvis, type AppStatus, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
+import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
+import { refreshStatus } from "@/lib/status";
 import { setNavigator } from "@/services/jarvis";
 import type { KGData } from "@/types/graph";
 
@@ -42,19 +43,7 @@ async function boot() {
   } catch {
     /* storage unavailable: keep the default */
   }
-  try {
-    const res = await fetch("/api/status");
-    const status = (await res.json()) as AppStatus;
-    s.setStatus(status);
-    s.log(
-      "system",
-      status.mode === "demo"
-        ? "DEMO MODE — no ANTHROPIC_API_KEY found; using the local brain"
-        : "Claude API key detected — AI features arrive in Phase 2",
-    );
-  } catch {
-    s.log("error", "JARVIS AI service unavailable.");
-  }
+  await refreshStatus();
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { PageFrame } from "@/components/layout/SectionPage";
+import ClaudeKeySection from "@/components/settings/ClaudeKeySection";
 import { PanelTitle } from "@/components/layout/ui";
 import { clearLocal } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
@@ -71,25 +72,13 @@ export default function SettingsView() {
                 window.location.reload();
               }
             }}
-            className="mt-5 border border-rose-400/40 px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wider text-rose-300/90 hover:border-rose-400"
+            className="ml-2 mt-5 border border-rose-400/40 px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wider text-rose-300/90 hover:border-rose-400"
           >
             Clear items I created
           </button>
         </section>
 
-        <section className="md:col-span-2">
-          <PanelTitle>API keys</PanelTitle>
-          <p className="text-[13px] leading-relaxed text-ink-dim">
-            Keys live only on the server, in a file called <code className="text-accent">.env.local</code> in the project folder (copy{" "}
-            <code className="text-accent">.env.example</code>). They are never sent to the browser. Restart <code className="text-accent">npm run dev</code>{" "}
-            after editing it.
-          </p>
-          <pre className="mt-3 border border-line bg-black/40 p-4 font-mono text-[12px] text-ink-dim">
-{`ANTHROPIC_API_KEY=sk-ant-...
-ELEVENLABS_API_KEY=
-TELEGRAM_BOT_TOKEN=`}
-          </pre>
-        </section>
+        <ClaudeKeySection />
       </div>
     </PageFrame>
   );
