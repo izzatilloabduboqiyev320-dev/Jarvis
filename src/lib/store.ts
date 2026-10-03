@@ -31,6 +31,7 @@ export type Focus =
 
 export type VoiceLang = "uz-UZ" | "en-US";
 export const VOICE_LANG_KEY = "jarvis.voice-lang.v1";
+export const VOICE_REPLIES_KEY = "jarvis.voice-replies.v1";
 
 export interface AppStatus {
   mode: "demo" | "ai";
@@ -95,7 +96,7 @@ export const useJarvis = create<JarvisStore>((set) => ({
   viewer: null,
   hud: "idle",
   hudDetail: "",
-  voiceReplies: false,
+  voiceReplies: true,
   voiceLang: "uz-UZ",
   paletteOpen: false,
   graphError: null,
@@ -119,7 +120,14 @@ export const useJarvis = create<JarvisStore>((set) => ({
   setLayout: (layout) => set({ layout }),
   openViewer: (viewer) => set({ viewer }),
   setHud: (hud, hudDetail = "") => set({ hud, hudDetail }),
-  setVoiceReplies: (voiceReplies) => set({ voiceReplies }),
+  setVoiceReplies: (voiceReplies) => {
+    try {
+      localStorage.setItem(VOICE_REPLIES_KEY, voiceReplies ? "1" : "0");
+    } catch {
+      /* storage unavailable: setting lasts for this visit only */
+    }
+    set({ voiceReplies });
+  },
   setVoiceLang: (voiceLang) => {
     try {
       localStorage.setItem(VOICE_LANG_KEY, voiceLang);

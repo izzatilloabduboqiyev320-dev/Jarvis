@@ -5,38 +5,57 @@
  * most systems). Phase 5 adds ElevenLabs behind a server route, with this as
  * the fallback.
  */
+
+/** Chrome loads its voice list asynchronously; wait briefly for it on first use. */
+function loadVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
+  const now = synth.getVoices();
+  if (now.length) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const done = () => {
+      synth.removeEventListener("voiceschanged", done);
+      resolve(synth.getVoices());
+    };
+    synth.addEventListener("voiceschanged", done);
+    setTimeout(done, 1200);
+  });
+}
+
 function pickVoice(voices: SpeechSynthesisVoice[], lang: "en" | "uz") {
+  const by = (prefix: string) => voices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith(prefix));
   if (lang === "uz") {
-    // Few systems ship an Uzbek voice; Turkish is the closest-sounding fallback.
-    return (
-      voices.find((v) => v.lang.toLowerCase().startsWith("uz")) ??
-      voices.find((v) => v.lang.toLowerCase().startsWith("tr")) ??
-      voices.find((v) => v.lang.toLowerCase().startsWith("ru"))
-    );
+    // Few systems ship an Uzbek voice; Turkish reads Latin Uzbek most naturally.
+    return by("uz") ?? by("tr") ?? by("ru") ?? voices.find((v) => v.default) ?? voices[0];
   }
   return (
     voices.find((v) => /Daniel|Google UK English Male|Arthur|Oliver/i.test(v.name)) ??
-    voices.find((v) => v.lang.startsWith("en-GB")) ??
-    voices.find((v) => v.lang.startsWith("en"))
+    by("en-gb") ??
+    by("en") ??
+    voices.find((v) => v.default) ??
+    voices[0]
   );
 }
 
-export function speak(text: string, lang: "en" | "uz" = "en"): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return resolve();
-    const synth = window.speechSynthesis;
-    synth.cancel();
+export async function speak(text: string, lang: "en" | "uz" = "en"): Promise<void> {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const voice = pickVoice(await loadVoices(synth), lang);
+  await new Promise<void>((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
-    const preferred = pickVoice(synth.getVoices(), lang);
-    if (preferred) u.voice = preferred;
-    u.lang = preferred?.lang ?? (lang === "uz" ? "uz-UZ" : "en-GB");
-    u.rate = 1.02;
+    // Only name a language we have a voice for: an unknown lang can make the browser stay silent.
+    if (voice) {
+      u.voice = voice;
+      u.lang = voice.lang;
+    }
+    u.rate = lang === "uz" ? 0.95 : 1.02;
     u.pitch = 0.9;
     u.onend = () => resolve();
     u.onerror = () => resolve();
     synth.speak(u);
+    // Chrome sometimes pauses a queued utterance; nudge it.
+    synth.resume();
     // Safety net: some browsers never fire onend.
-    setTimeout(resolve, Math.min(20_000, 1500 + text.length * 70));
+    setTimeout(resolve, Math.min(30_000, 1500 + text.length * 80));
   });
 }
 
