@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# J.A.R.V.I.S. — personal AI knowledge OS
 
-## Getting Started
+A black, graph-centred command centre: your projects, knowledge, files, tools and agents as one interactive knowledge graph, with JARVIS (Claude, from Phase 2) as the brain.
 
-First, run the development server:
+![Dashboard](docs/screenshots/jarvis-dashboard.png)
+
+## Launch
+
+Requirements: **Node.js 20 or newer** (check with `node -v`).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd jarvis
+npm install        # first time only
+npm run dev        # then open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local brain that searches the knowledge graph. To prepare for Phase 2, copy `.env.example` to `.env.local` and add `ANTHROPIC_API_KEY`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For a faster production build: `npm run build && npm start`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## What works now (Phase 1)
 
-## Learn More
+| Area | Status |
+|---|---|
+| Knowledge graph | 119 meaningful demo nodes, 252 typed relationships, WebGL (Sigma.js) with glow, slow float, smooth animations |
+| Graph interactions | hover highlights connections · click focuses + dims the rest · double-click opens the item · shift-click traces the path · drag nodes · zoom/pan · Fit · Reset · `/` to search |
+| Layouts | Force (ForceAtlas2), Clusters (by category), Radial (around the selected node) |
+| Inspector | name, type, description, connections (clickable), importance, last updated, source, tags, metadata, actions |
+| Top Hubs | most connected nodes with counts |
+| Filter | every category with coloured dot, count and toggle, instant |
+| Search / Ask | natural language: "Find everything related to YouTube", "Show all projects connected to Claude", "Find files related to ICT", "How are Claude and my YouTube project connected?", "What am I working on?" |
+| Command palette | `⌘K` / `Ctrl+K` or click the HUD: Ask Jarvis, Search Memory, Search Files, Add Note, Create Task, Import File, navigation, voice replies |
+| Memory (local) | "Remember that…", "Create a task…", "Add note…" create linked nodes that survive reloads (browser storage until SQLite in Phase 3) |
+| JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
+| Activity stream | every step JARVIS takes, timestamped |
+| Pages | /graph (main), /chat, /memory, /files, /agents, /skills, /tasks, /settings |
+| Scale | `/graph?stress=5000` loads 5,000 extra synthetic nodes for performance testing |
 
-To learn more about Next.js, take a look at the following resources:
+## Checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run check   # lint + typecheck + query-engine smoke test + production build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Most important files
 
-## Deploy on Vercel
+| File | What it is |
+|---|---|
+| `src/components/graph/KnowledgeGraph.tsx` | the Sigma.js renderer: highlighting, focus, paths, drag, animation |
+| `src/components/graph/glow-node-program.ts` | WebGL shader that draws the glowing nodes |
+| `src/knowledge/demo-graph.ts` | the demo knowledge graph (edit this to change the sample data) |
+| `src/knowledge/graph.ts` | graph model, path finding, hubs, layouts |
+| `src/knowledge/query.ts` | the offline natural-language query engine (becomes Claude's tools in Phase 2) |
+| `src/services/jarvis.ts` | the JARVIS request pipeline (intent → search → act → respond → speak) |
+| `src/lib/store.ts` | app state (selection, focus, filters, HUD, activity) |
+| `src/components/hud/JarvisHud.tsx` + `src/app/globals.css` | the HUD and the design system |
+| `src/app/api/graph`, `src/app/api/status` | server routes (graph data; AI status, never exposes keys) |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `docs/ARCHITECTURE.md` for how it fits together and the roadmap.
