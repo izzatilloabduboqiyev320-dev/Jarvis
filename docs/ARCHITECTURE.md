@@ -13,8 +13,8 @@ graph-instance (graphology, outside React)
    ├─ CommandPalette (⌘K) / GraphToolbar search
    │        │
    │        ▼
-   │   services/jarvis.ts  ── knowledge/query.ts (local brain)
-   │        │                    Phase 2: POST /api/chat → ClaudeProvider + tools
+   │   services/jarvis.ts  ── knowledge/query.ts (local brain, graph focus, saves)
+   │        │              └─ POST /api/chat ──▶  ai/claude.ts (Anthropic SDK, streaming)
    │        ▼
    └─ store (zustand): focus, selection, HUD state, activity log
 ```
@@ -31,7 +31,7 @@ graph-instance (graphology, outside React)
 ## Roadmap
 
 1. **Foundation** ✓ graph, inspector, hubs, filters, HUD, palette, demo data.
-2. **AI** — `AIProvider` interface with `ClaudeProvider` (OpenAI/local later), `/api/chat` with streaming, JARVIS system prompt, tool-calling over the graph engine, permission levels 0–3 with an approval dialog, "JARVIS AI service unavailable" fallback.
+2. **AI** — started: `/api/chat` streams Claude replies with knowledge-graph context (`src/ai/claude.ts`). Next: `AIProvider` interface with `ClaudeProvider` (OpenAI/local later), `/api/chat` with streaming, JARVIS system prompt, tool-calling over the graph engine, permission levels 0–3 with an approval dialog, "JARVIS AI service unavailable" fallback.
 3. **Memory** — SQLite (nodes, edges, memories, conversations, messages, tools, agents, tasks, files, settings), memory types, embeddings and hybrid search (keyword + vector + graph + recency + importance), graph persistence.
 4. **Files** — drag-and-drop PDF/TXT/MD/DOCX ingestion → chunk → entity/relationship extraction → graph.
 5. **Voice** — server STT, ElevenLabs TTS with browser fallback, "Jarvis" wake workflow.

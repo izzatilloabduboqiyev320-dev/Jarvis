@@ -6,6 +6,7 @@ import GraphToolbar from "@/components/graph/GraphToolbar";
 import JarvisHud from "@/components/hud/JarvisHud";
 import Inspector from "@/components/inspector/Inspector";
 import TopHubs from "@/components/inspector/TopHubs";
+import ChatDock from "@/components/chat/ChatDock";
 import ActivityStream from "@/components/jarvis/ActivityStream";
 import { useJarvis } from "@/lib/store";
 
@@ -47,6 +48,7 @@ export default function GraphView() {
         {ready ? <KnowledgeGraph /> : <BootScreen label="Initialising knowledge graph" />}
         <GraphToolbar />
         <ActivityStream />
+        <ChatDock />
       </section>
 
       <aside className="flex w-[250px] shrink-0 flex-col border-l border-line bg-black/20">

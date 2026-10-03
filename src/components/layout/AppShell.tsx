@@ -6,7 +6,7 @@ import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
 import NavRail from "@/components/layout/NavRail";
 import { loadGraph } from "@/lib/graph-instance";
-import { useJarvis, type AppStatus, VOICE_LANG_KEY, VOICE_REPLIES_KEY } from "@/lib/store";
+import { useJarvis, type AppStatus, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { setNavigator } from "@/services/jarvis";
 import type { KGData } from "@/types/graph";
 
@@ -33,6 +33,10 @@ async function boot() {
   try {
     const lang = localStorage.getItem(VOICE_LANG_KEY);
     if (lang === "uz-UZ" || lang === "en-US") s.setVoiceLang(lang);
+    const saved = JSON.parse(localStorage.getItem(CHAT_KEY) ?? "[]") as ChatMessage[];
+    if (Array.isArray(saved) && saved.length && !s.messages.length) {
+      s.setMessages(saved.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "jarvis")).slice(-50));
+    }
     const replies = localStorage.getItem(VOICE_REPLIES_KEY);
     if (replies === "0") s.setVoiceReplies(false);
   } catch {

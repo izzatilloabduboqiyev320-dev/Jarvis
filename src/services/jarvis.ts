@@ -1,10 +1,12 @@
 "use client";
 
-import { addEdgeToGraph, addNodeToGraph, refreshSizes } from "@/knowledge/graph";
+import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
+import { addEdgeToGraph, addNodeToGraph, refreshSizes, topHubs } from "@/knowledge/graph";
+import { detectLang } from "@/knowledge/uzbek";
 import { runQuery, type QueryResult } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph, persistLocal } from "@/lib/graph-instance";
-import { useJarvis } from "@/lib/store";
+import { CHAT_KEY, useJarvis } from "@/lib/store";
 import { speak } from "@/voice/speak";
 import type { KGEdge, KGNode } from "@/types/graph";
 
@@ -17,6 +19,72 @@ import type { KGEdge, KGNode } from "@/types/graph";
  * Phase 2 inserts Claude between "understand" and "respond" via /api/chat,
  * with the query engine exposed to it as tools.
  */
+
+function saveChat() {
+  try {
+    localStorage.setItem(CHAT_KEY, JSON.stringify(useJarvis.getState().messages.filter((m) => m.text)));
+  } catch {
+    /* storage full or unavailable: chat history lasts for this visit only */
+  }
+}
+
+export function clearChat() {
+  useJarvis.getState().setMessages([]);
+  saveChat();
+}
+
+/** Knowledge-graph items Claude should see for this message. */
+function buildContext(result: QueryResult): ChatRequest["context"] {
+  const graph = getGraph();
+  const selected = useJarvis.getState().selected;
+  const ids = [...new Set([...result.anchors, ...(result.path ?? []), ...result.nodes, ...(selected ? [selected] : [])])].filter((id) =>
+    graph.hasNode(id),
+  );
+  // Nothing matched: give Claude the overall shape of the graph (top hubs).
+  const chosen = ids.length ? ids : topHubs(graph, 12).map((h) => h.id);
+  const nodes: ContextNode[] = chosen.slice(0, CHAT_LIMITS.nodes).map((id) => {
+    const a = graph.getNodeAttributes(id);
+    return {
+      label: a.label,
+      category: a.category,
+      description: a.node.description,
+      updated: a.node.updatedAt?.slice(0, 10),
+      links: graph.neighbors(id).slice(0, CHAT_LIMITS.links).map((n) => graph.getNodeAttribute(n, "label")),
+    };
+  });
+  return {
+    nodes,
+    selected: selected && graph.hasNode(selected) ? graph.getNodeAttribute(selected, "label") : undefined,
+    localAction: result.create ? `saved ${result.create.category} "${result.create.label}"` : undefined,
+  };
+}
+
+/** Streams Claude's reply via /api/chat; throws with a readable message on failure. */
+async function streamChat(text: string, result: QueryResult, lang: "en" | "uz", onPartial: (t: string) => void): Promise<string> {
+  const history: ChatTurn[] = useJarvis
+    .getState()
+    .messages.filter((m) => m.text)
+    .slice(-CHAT_LIMITS.messages)
+    .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+  const body: ChatRequest = { messages: history, lang, context: buildContext(result) };
+  const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok || !res.body) {
+    const err = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(err?.message ?? "JARVIS AI service unavailable");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value, { stream: true });
+    onPartial(out);
+  }
+  out = out.trim();
+  if (!out) throw new Error("Claude returned an empty reply");
+  return out;
+}
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,21 +133,41 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     }
 
     applyResult(result);
-    if (result.intent === "needs-ai") s.log("system", "Requires Claude (Phase 2) — answered from local knowledge");
 
-    s.addMessage("jarvis", result.answer);
-    s.log("ai", `JARVIS responded (${useJarvis.getState().status.mode === "demo" ? "demo brain" : "Claude"})`);
+    const lang = result.lang ?? detectLang(text);
+    let answer = result.answer;
+    let brain = "demo brain";
+    // Saving a memory/task/note is done locally (deterministic); Claude answers everything else.
+    if (useJarvis.getState().status.mode === "ai" && !result.create) {
+      s.setHud("thinking", "Asking Claude");
+      s.log("ai", "Asking Claude");
+      const id = s.addMessage("jarvis", "");
+      try {
+        answer = await streamChat(text, result, lang, (partial) => useJarvis.getState().updateMessage(id, partial));
+        brain = "Claude";
+      } catch (err) {
+        s.log("error", `${(err as Error).message} — answered from local knowledge`);
+        answer = result.answer;
+      }
+      useJarvis.getState().updateMessage(id, answer);
+    } else {
+      if (result.intent === "needs-ai") s.log("system", "Needs Claude: add ANTHROPIC_API_KEY to .env.local. Answered from local knowledge");
+      s.addMessage("jarvis", answer);
+    }
+    saveChat();
+
+    s.log("ai", `JARVIS responded (${brain})`);
     s.setHud("speaking", "Responding");
     if (useJarvis.getState().voiceReplies) {
-      const voice = await speak(result.answer, result.lang ?? "en");
+      const voice = await speak(answer, lang);
       s.log("system", voice ? `Spoke reply — voice: ${voice}` : "This browser has no speech output; reply shown as text");
-    }
-    else await wait(Math.min(2400, 700 + result.answer.length * 12));
+    } else await wait(Math.min(2400, 700 + answer.length * 12));
     return result;
   } catch (err) {
     const msg = (err as Error).message || "Unknown error";
     s.log("error", `JARVIS error: ${msg}`);
     s.addMessage("jarvis", `Something went wrong: ${msg}`);
+    saveChat();
     s.setHud("error", msg);
     await wait(1800);
     return null;

@@ -14,7 +14,15 @@ npm install        # first time only
 npm run dev        # then open http://localhost:3000
 ```
 
-No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local brain that searches the knowledge graph. To prepare for Phase 2, copy `.env.example` to `.env.local` and add `ANTHROPIC_API_KEY`.
+No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local brain that searches the knowledge graph.
+
+### Chat with Claude
+
+1. Create a key at https://console.anthropic.com → API Keys (billing must be set up there).
+2. Copy `.env.example` to `.env.local` and paste the key: `ANTHROPIC_API_KEY=sk-ant-...`
+3. Restart `npm run dev`. The HUD shows "online" and the chat (bottom-right of the graph, or /chat) answers with Claude, using the matching parts of your knowledge graph as context.
+
+The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never sent to the browser. `.env.local` is git-ignored. Optional: `JARVIS_MODEL` picks another Claude model.
 
 For a faster production build: `npm run build && npm start`.
 
@@ -32,6 +40,7 @@ For a faster production build: `npm run build && npm start`.
 | Command palette | `⌘K` / `Ctrl+K` or click the HUD: Ask Jarvis, Search Memory, Search Files, Add Note, Create Task, Import File, navigation, voice replies |
 | Memory (local) | "Remember that…", "Create a task…", "Add note…" create linked nodes that survive reloads (browser storage until SQLite in Phase 3) |
 | JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
+| Chat | chat window on the graph page and /chat; streams Claude replies when `ANTHROPIC_API_KEY` is set, otherwise the local brain answers; history kept in the browser |
 | Activity stream | every step JARVIS takes, timestamped |
 | Pages | /graph (main), /chat, /memory, /files, /agents, /skills, /tasks, /settings |
 | Scale | `/graph?stress=5000` loads 5,000 extra synthetic nodes for performance testing |

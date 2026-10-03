@@ -195,7 +195,7 @@ function PaletteDialog() {
         <span className="corner tl" /><span className="corner tr" /><span className="corner bl" /><span className="corner br" />
         {messages.length > 0 && (
           <div ref={logRef} className="max-h-[220px] space-y-2 overflow-y-auto border-b border-line px-4 py-3" data-testid="chat-log">
-            {messages.slice(-12).map((m) => (
+            {messages.filter((m) => m.text).slice(-12).map((m) => (
               <div key={m.id} className={`text-[12.5px] leading-relaxed ${m.role === "user" ? "text-ink-dim" : "text-ink"}`}>
                 <span className={`mr-2 font-mono text-[9.5px] uppercase tracking-[0.18em] ${m.role === "user" ? "text-ink-faint" : "text-accent"}`}>
                   {m.role === "user" ? "You" : "Jarvis"}

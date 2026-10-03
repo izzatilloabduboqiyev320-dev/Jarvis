@@ -31,6 +31,7 @@ export type Focus =
 
 export type VoiceLang = "uz-UZ" | "en-US";
 export const VOICE_LANG_KEY = "jarvis.voice-lang.v1";
+export const CHAT_KEY = "jarvis.chat.v1";
 export const VOICE_REPLIES_KEY = "jarvis.voice-replies.v1";
 
 export interface AppStatus {
@@ -78,7 +79,10 @@ interface JarvisStore {
   setVoiceLang: (l: VoiceLang) => void;
   setPaletteOpen: (v: boolean) => void;
   setGraphError: (e: string | null) => void;
-  addMessage: (role: ChatMessage["role"], text: string) => void;
+  /** Adds a chat message and returns its id. */
+  addMessage: (role: ChatMessage["role"], text: string) => number;
+  updateMessage: (id: number, text: string) => void;
+  setMessages: (m: ChatMessage[]) => void;
   log: (kind: ActivityKind, text: string) => void;
 }
 
@@ -138,8 +142,16 @@ export const useJarvis = create<JarvisStore>((set) => ({
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setGraphError: (graphError) => set({ graphError }),
-  addMessage: (role, text) =>
-    set((s) => ({ messages: [...s.messages, { id: ++seq, role, text, ts: Date.now() }].slice(-50) })),
+  addMessage: (role, text) => {
+    const id = ++seq;
+    set((s) => ({ messages: [...s.messages, { id, role, text, ts: Date.now() }].slice(-50) }));
+    return id;
+  },
+  updateMessage: (id, text) => set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, text } : m)) })),
+  setMessages: (messages) => {
+    seq = Math.max(seq, ...messages.map((m) => m.id));
+    set({ messages });
+  },
   log: (kind, text) =>
     set((s) => ({ activity: [...s.activity, { id: ++seq, ts: Date.now(), kind, text }].slice(-200) })),
 }));

@@ -12,6 +12,7 @@
     "check": "npm run lint && npm run typecheck && npm run check:query && npm run build"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "graphology": "^0.26.0",
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
