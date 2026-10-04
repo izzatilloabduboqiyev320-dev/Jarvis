@@ -1,0 +1,626 @@
+<title>J.A.R.V.I.S.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one dark command screen. Knowledge graph fills the left, the conversation with JARVIS is a fixed column on the right; stacks graph-over-chat on phones. */
+:root {
+  --bg: #04080a;
+  --panel: #071013;
+  --panel-2: #0b171b;
+  --line: #15282d;
+  --line-strong: #23424a;
+  --ink: #dbe9ec;
+  --ink-dim: #93aab0;
+  --ink-faint: #5c7379;
+  --accent: #57d4e6;
+  --accent-soft: rgba(87, 212, 230, 0.12);
+  --warn: #e7c46d;
+  --bad: #ef8a8a;
+  --good: #79dca0;
+  --display: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --body: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 420px; height: 100%; }
+
+/* ── Graph ── */
+.stage { position: relative; min-width: 0; overflow: hidden; background:
+  radial-gradient(ellipse at 45% 50%, rgba(87, 212, 230, 0.05), transparent 60%), var(--bg); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.brand { position: absolute; top: 16px; left: 16px; pointer-events: none; }
+.brand h1 { margin: 0; font-family: var(--mono); font-weight: 500; font-size: 13px; letter-spacing: 0.42em; color: var(--ink); }
+.brand p { margin: 4px 0 0; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-faint); }
+.stats { position: absolute; top: 16px; right: 16px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.stats b { color: var(--ink-dim); font-weight: 500; }
+.tools { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tbtn { height: 28px; padding: 0 10px; background: rgba(4, 8, 10, 0.7); border: 1px solid var(--line-strong); font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.tbtn:hover { color: var(--accent); border-color: var(--accent); }
+.legend { position: absolute; left: 16px; top: 64px; display: grid; gap: 3px; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+.legend span { display: flex; align-items: center; gap: 7px; }
+.legend i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+.inspector { position: absolute; left: 16px; bottom: 56px; width: min(340px, calc(100% - 32px)); max-height: 52%; overflow-y: auto; background: rgba(7, 16, 19, 0.94); border: 1px solid var(--line-strong); padding: 14px 16px; backdrop-filter: blur(6px); }
+.inspector .cat { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; }
+.inspector h2 { margin: 4px 0 6px; font-family: var(--display); font-weight: 500; font-size: 17px; text-wrap: balance; }
+.inspector p { margin: 0 0 10px; color: var(--ink-dim); line-height: 1.55; font-size: 13px; }
+.inspector .meta { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.08em; margin-bottom: 10px; }
+.inspector .links { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.chip { border: 1px solid var(--line-strong); background: transparent; padding: 3px 8px; font-size: 12px; color: var(--ink-dim); }
+.chip:hover { color: var(--ink); border-color: var(--accent); }
+.inspector .row { display: flex; gap: 6px; }
+.inspector .close { position: absolute; top: 8px; right: 10px; border: 0; background: none; color: var(--ink-faint); font-size: 16px; }
+
+/* ── Chat ── */
+.chat { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+.chat-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.orb { position: relative; width: 34px; height: 34px; flex: none; }
+.orb::before, .orb::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent); opacity: 0.55; }
+.orb::after { inset: 9px; background: var(--accent); opacity: 0.85; box-shadow: 0 0 14px var(--accent); }
+.orb[data-state="thinking"]::before { border-style: dashed; animation: spin 2.2s linear infinite; opacity: 0.9; }
+.orb[data-state="speaking"]::after { animation: pulse 0.9s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { transform: scale(1.35); opacity: 0.55; } }
+.chat-head .who { min-width: 0; flex: 1; }
+.chat-head .who b { display: block; font-family: var(--mono); font-weight: 500; font-size: 12px; letter-spacing: 0.3em; }
+.chat-head .who span { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
+.chat-head .who span.on { color: var(--good); }
+.chat-head .who span.off { color: var(--warn); }
+.toggle { height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); background: transparent; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+.log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 92%; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.msg .who { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-faint); }
+.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: 14px; padding: 9px 12px; border: 1px solid var(--line); }
+.msg.user { align-self: flex-end; text-align: right; }
+.msg.user .text { color: var(--ink-dim); text-align: left; }
+.msg.jarvis .text { border-color: rgba(87, 212, 230, 0.28); background: rgba(87, 212, 230, 0.045); color: var(--ink); }
+.msg .text.waiting { color: var(--accent); font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.45; } }
+.msg .note { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.06em; }
+.msg .note.bad { color: var(--bad); }
+.msg .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.steps { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); display: grid; gap: 2px; }
+.steps div::before { content: "› "; color: var(--accent); }
+
+.welcome { color: var(--ink-dim); line-height: 1.6; }
+.welcome h3 { margin: 0 0 6px; font-family: var(--display); font-weight: 500; font-size: 18px; color: var(--ink); text-wrap: balance; }
+.welcome p { margin: 0 0 12px; }
+.sugg { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.sugg button { text-align: left; border: 1px solid var(--line-strong); background: transparent; padding: 7px 10px; color: var(--ink-dim); font-size: 13px; }
+.sugg button:hover { color: var(--ink); border-color: var(--accent); }
+.notice { border: 1px solid rgba(231, 196, 109, 0.35); background: rgba(231, 196, 109, 0.06); color: var(--warn); padding: 9px 12px; font-size: 12.5px; line-height: 1.5; }
+
+.compose { border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; }
+.compose textarea { width: 100%; min-height: 44px; max-height: 140px; resize: none; background: var(--bg); border: 1px solid var(--line-strong); padding: 10px 12px; line-height: 1.45; font-size: 14px; }
+.compose textarea:focus { border-color: var(--accent); outline: none; }
+.compose .bar { display: flex; align-items: center; gap: 8px; }
+.compose .hint { flex: 1; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-faint); min-width: 0; }
+.send { height: 32px; padding: 0 14px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.send:disabled { opacity: 0.4; cursor: default; }
+.ghost { height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink-faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+.ghost:hover { color: var(--ink); }
+.confirm { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--ink-dim); }
+
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 40% 60%; }
+  .chat { border-left: 0; border-top: 1px solid var(--line); }
+  .legend { display: none; }
+  .compose .hint { visibility: hidden; }
+  .inspector { bottom: 52px; max-height: 70%; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="app">
+  <section class="stage" id="stage" aria-label="Knowledge graph">
+    <canvas id="graph"></canvas>
+    <div class="brand"><h1>J.A.R.V.I.S.</h1><p>Bilim operatsion tizimi</p></div>
+    <div class="stats" id="stats"></div>
+    <div class="legend" id="legend"></div>
+    <div class="tools">
+      <button class="tbtn" id="fit" type="button">Hammasi</button>
+      <button class="tbtn" id="zin" type="button" aria-label="Yaqinlashtirish">+</button>
+      <button class="tbtn" id="zout" type="button" aria-label="Uzoqlashtirish">−</button>
+    </div>
+    <div class="inspector" id="inspector" hidden></div>
+  </section>
+
+  <section class="chat" aria-label="JARVIS bilan suhbat">
+    <header class="chat-head">
+      <div class="orb" id="orb" data-state="idle" aria-hidden="true"></div>
+      <div class="who"><b>JARVIS</b><span id="status">Ulanmoqda…</span></div>
+      <button class="toggle" id="deep" type="button" aria-pressed="false" title="Murakkab savollar uchun chuqurroq o'ylaydi (sekinroq)">Chuqur</button>
+      <button class="toggle" id="voice" type="button" aria-pressed="false" title="Javoblarni ovoz chiqarib o'qiydi">Ovoz</button>
+    </header>
+    <div class="log" id="log" aria-live="polite"></div>
+    <form class="compose" id="compose">
+      <label for="input" hidden>Xabar</label>
+      <textarea id="input" rows="1" placeholder="JARVIS'ga yozing…" maxlength="4000" autocomplete="off"></textarea>
+      <div class="bar">
+        <span class="hint" id="hint">Enter: yuborish · Shift+Enter: yangi qator</span>
+        <button class="ghost" id="clear" type="button">Tozalash</button>
+        <button class="send" id="send" type="submit">Yuborish</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+const DATA = __DATA__;
+const TODAY = new Date().toISOString().slice(0, 10);
+
+// ── Storage (per viewer, best-effort) ───────────────────────────────
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+// ── Graph model ─────────────────────────────────────────────────────
+const nodes = new Map();
+const adj = new Map();
+const edges = [];
+function addNode(n) { nodes.set(n.id, n); if (!adj.has(n.id)) adj.set(n.id, []); }
+function addEdge(s, t, rel) {
+  if (!nodes.has(s) || !nodes.has(t)) return;
+  const e = { s, t, rel };
+  edges.push(e); adj.get(s).push({ id: t, rel, out: true }); adj.get(t).push({ id: s, rel, out: false });
+}
+DATA.nodes.forEach(addNode);
+DATA.edges.forEach(([s, t, r]) => addEdge(s, t, r));
+
+const memories = store.get("jarvis.web.memories", []);
+memories.forEach(placeMemory);
+
+function placeMemory(m) {
+  const anchor = m.links.map((id) => nodes.get(id)).find(Boolean) ?? nodes.get("izzatillo");
+  const a = (m.id.length * 2.4) % (Math.PI * 2);
+  addNode({ id: m.id, label: m.label, category: "memory", description: m.text, importance: 0.45, tags: ["jarvis"], updatedAt: m.date,
+    x: (anchor?.x ?? 0) + Math.cos(a) * 9, y: (anchor?.y ?? 0) + Math.sin(a) * 9, mine: true });
+  m.links.forEach((id) => addEdge(m.id, id, "RELATED_TO"));
+}
+
+const color = (n) => DATA.categories[n.category]?.color ?? "#8899aa";
+const catLabel = (c) => ({ person: "Odam", project: "Loyiha", world: "Soha", router: "Router", wiki: "Viki", suite: "To'plam", concept: "Tushuncha", skill: "Ko'nikma", tool: "Vosita", agent: "Agent", automation: "Avtomatlashtirish", note: "Eslatma", file: "Fayl", book: "Kitob", video: "Video", web: "Veb-manba", company: "Kompaniya", task: "Vazifa", goal: "Maqsad", memory: "Xotira" })[c] ?? c;
+const radius = (n) => 3 + n.importance * 9 + Math.min(Math.sqrt(adj.get(n.id).length) * 1.1, 7);
+
+function norm(s) { return String(s).toLowerCase().replace(/[’‘ʻʼ`´]/g, "'").normalize("NFKD").replace(/[̀-ͯ]/g, ""); }
+function search(q, limit = 10) {
+  const words = norm(q).split(/[^a-z0-9'+#.]+/).filter((w) => w.length > 1);
+  if (!words.length) return [];
+  const scored = [];
+  for (const n of nodes.values()) {
+    const label = norm(n.label), body = norm(`${n.description} ${(n.tags || []).join(" ")} ${n.category} ${n.content || ""}`);
+    let s = 0;
+    for (const w of words) {
+      if (label === w) s += 12; else if (label.includes(w)) s += 6;
+      if (body.includes(w)) s += 2;
+    }
+    if (s) scored.push([s + n.importance * 2 + adj.get(n.id).length * 0.05, n]);
+  }
+  return scored.sort((a, b) => b[0] - a[0]).slice(0, limit).map(([, n]) => n);
+}
+function resolve(name) {
+  const k = norm(name).trim();
+  if (nodes.has(name)) return nodes.get(name);
+  for (const n of nodes.values()) if (norm(n.label) === k) return n;
+  return search(name, 1)[0] ?? null;
+}
+function findPath(from, to) {
+  const prev = new Map([[from, null]]);
+  const q = [from];
+  while (q.length) {
+    const cur = q.shift();
+    if (cur === to) break;
+    for (const { id } of adj.get(cur)) {
+      if (prev.has(id) || (id === "izzatillo" && to !== "izzatillo")) continue;
+      prev.set(id, cur); q.push(id);
+    }
+  }
+  if (!prev.has(to)) return null;
+  const path = []; for (let c = to; c != null; c = prev.get(c)) path.unshift(c);
+  return path;
+}
+const brief = (n) => ({ id: n.id, name: n.label, type: n.category, about: n.description, updated: n.updatedAt });
+
+// ── Graph rendering (canvas 2D) ─────────────────────────────────────
+const canvas = document.getElementById("graph");
+const ctx = canvas.getContext("2d");
+const stage = document.getElementById("stage");
+const cam = { x: 0, y: 0, k: 1 };
+let target = null;              // camera tween target
+let hover = null, selected = null;
+let focus = null;               // Set of node ids highlighted
+let pathSet = null;             // Set of "a|b" edge keys on a traced path
+let W = 0, H = 0, DPR = 1, frame = 0;
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  draw();
+}
+const toScreen = (n) => [(n.x - cam.x) * cam.k + W / 2, (n.y - cam.y) * cam.k + H / 2];
+function fit(ids, instant) {
+  const list = (ids && ids.length ? ids.map((id) => nodes.get(id)) : [...nodes.values()]).filter(Boolean);
+  if (!list.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of list) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
+  const pad = list.length === 1 ? 60 : 0;
+  const w = Math.max(x1 - x0 + pad, 30), h = Math.max(y1 - y0 + pad, 30);
+  const k = Math.min((W - 120) / w, (H - 140) / h, list.length < 4 ? 6 : 4);
+  const t = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, k: Math.max(k, 0.2) };
+  if (instant) { Object.assign(cam, t); draw(); } else { target = t; tick(); }
+}
+function tick() {
+  cancelAnimationFrame(frame);
+  frame = requestAnimationFrame(function step() {
+    if (!target) return;
+    cam.x += (target.x - cam.x) * 0.16; cam.y += (target.y - cam.y) * 0.16; cam.k += (target.k - cam.k) * 0.16;
+    if (Math.abs(target.k - cam.k) < 0.002 * target.k && Math.abs(target.x - cam.x) < 0.05 && Math.abs(target.y - cam.y) < 0.05) { Object.assign(cam, target); target = null; }
+    draw();
+    if (target) frame = requestAnimationFrame(step);
+  });
+}
+
+function draw() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const hot = new Set(focus ?? []);
+  if (hover) { hot.add(hover); adj.get(hover).forEach(({ id }) => hot.add(id)); }
+  if (selected && !focus) { hot.add(selected); adj.get(selected).forEach(({ id }) => hot.add(id)); }
+  const dimming = hot.size > 0;
+  const zs = Math.max(0.55, Math.min(cam.k, 2.2));
+
+  // edges
+  for (const e of edges) {
+    const a = nodes.get(e.s), b = nodes.get(e.t);
+    const [ax, ay] = toScreen(a), [bx, by] = toScreen(b);
+    const onPath = pathSet?.has(e.s + "|" + e.t) || pathSet?.has(e.t + "|" + e.s);
+    const lit = onPath || (dimming && hot.has(e.s) && hot.has(e.t) && (!focus || e.s === hover || e.t === hover || e.s === selected || e.t === selected || focus.has(e.s) && focus.has(e.t)));
+    ctx.strokeStyle = onPath ? "rgba(255, 214, 120, 0.95)" : lit ? "rgba(87, 212, 230, 0.55)" : dimming ? "rgba(48, 90, 98, 0.10)" : "rgba(70, 130, 140, 0.32)";
+    ctx.lineWidth = onPath ? 2.4 : lit ? 1.4 : 0.8;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  // nodes
+  const labelled = [];
+  for (const n of nodes.values()) {
+    const [x, y] = toScreen(n);
+    if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
+    const r = radius(n) * zs * 0.55;
+    const on = !dimming || hot.has(n.id);
+    const c = color(n);
+    ctx.globalAlpha = on ? 1 : 0.16;
+    const g = ctx.createRadialGradient(x, y, r * 0.3, x, y, r * 2.4);
+    g.addColorStop(0, c + "66"); g.addColorStop(1, c + "00");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    if (n.id === selected || n.id === hover) { ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    const important = n.importance >= 0.8 || adj.get(n.id).length >= 12;
+    if ((dimming && hot.has(n.id)) || (!dimming && (important || cam.k > 2.2))) labelled.push([n, x, y, r]);
+  }
+  // labels, skipping overlaps (most important first)
+  labelled.sort((a, b) => b[0].importance - a[0].importance);
+  const boxes = [];
+  ctx.font = `12px ${getComputedStyle(document.body).getPropertyValue("--mono") || "monospace"}`;
+  ctx.textBaseline = "middle";
+  for (const [n, x, y, r] of labelled) {
+    const tw = ctx.measureText(n.label).width;
+    const bx = x + r + 6, by = y - 8, bw = tw + 6, bh = 16;
+    if (boxes.some((b) => bx < b[0] + b[2] && bx + bw > b[0] && by < b[1] + b[3] && by + bh > b[1])) continue;
+    boxes.push([bx, by, bw, bh]);
+    ctx.fillStyle = "rgba(4, 8, 10, 0.72)"; ctx.fillRect(bx - 3, by, bw, bh);
+    ctx.fillStyle = n.id === selected || n.id === hover ? "#ffffff" : "#c9dde1";
+    ctx.fillText(n.label, bx, y);
+  }
+  document.getElementById("stats").innerHTML = `<b>${nodes.size}</b> tugun · <b>${edges.length}</b> bog'lanish${focus ? `<br>${focus.size} ta ajratilgan` : ""}`;
+}
+
+function pick(mx, my) {
+  let best = null, bd = Infinity;
+  for (const n of nodes.values()) {
+    const [x, y] = toScreen(n);
+    const r = Math.max(radius(n) * Math.max(0.55, Math.min(cam.k, 2.2)) * 0.55, 6) + 3;
+    const d = Math.hypot(mx - x, my - y);
+    if (d < r && d < bd) { bd = d; best = n.id; }
+  }
+  return best;
+}
+
+// pointer: pan, hover, click; wheel zoom
+let drag = null;
+canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", (e) => {
+  const r = canvas.getBoundingClientRect();
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (drag.moved) { target = null; cam.x = drag.cx - dx / cam.k; cam.y = drag.cy - dy / cam.k; draw(); }
+    return;
+  }
+  const id = pick(e.clientX - r.left, e.clientY - r.top);
+  if (id !== hover) { hover = id; canvas.style.cursor = id ? "pointer" : "grab"; draw(); }
+});
+canvas.addEventListener("pointerup", (e) => {
+  const r = canvas.getBoundingClientRect();
+  if (drag && !drag.moved) {
+    const id = pick(e.clientX - r.left, e.clientY - r.top);
+    if (id) selectNode(id); else clearFocus();
+  }
+  drag = null;
+});
+canvas.addEventListener("pointerleave", () => { if (hover) { hover = null; draw(); } });
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const mx = e.clientX - r.left - W / 2, my = e.clientY - r.top - H / 2;
+  const wx = cam.x + mx / cam.k, wy = cam.y + my / cam.k;
+  const k = Math.min(12, Math.max(0.15, cam.k * Math.exp(-e.deltaY * 0.0015)));
+  target = null; cam.k = k; cam.x = wx - mx / k; cam.y = wy - my / k; draw();
+}, { passive: false });
+document.getElementById("fit").onclick = () => clearFocus(true);
+document.getElementById("zin").onclick = () => { target = { ...cam, k: cam.k * 1.5 }; tick(); };
+document.getElementById("zout").onclick = () => { target = { ...cam, k: cam.k / 1.5 }; tick(); };
+new ResizeObserver(resize).observe(stage);
+
+function clearFocus(refit) {
+  focus = null; pathSet = null; selected = null;
+  document.getElementById("inspector").hidden = true;
+  if (refit) fit(); else draw();
+}
+function highlight(ids, anchor) {
+  const valid = ids.filter((id) => nodes.has(id));
+  if (!valid.length) return;
+  focus = new Set(valid); pathSet = null;
+  selected = anchor && nodes.has(anchor) ? anchor : null;
+  if (selected) renderInspector(selected); else document.getElementById("inspector").hidden = true;
+  fit(valid);
+}
+function showPath(path) {
+  focus = new Set(path); selected = null;
+  pathSet = new Set(path.slice(1).map((id, i) => path[i] + "|" + id));
+  document.getElementById("inspector").hidden = true;
+  fit(path);
+}
+function selectNode(id) {
+  selected = id; focus = null; pathSet = null;
+  renderInspector(id);
+  fit([id, ...adj.get(id).map((l) => l.id)]);
+}
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else if (k === "style") e.style.cssText = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+function renderInspector(id) {
+  const n = nodes.get(id), box = document.getElementById("inspector");
+  box.replaceChildren(
+    el("button", { class: "close", type: "button", "aria-label": "Yopish", onclick: () => clearFocus() }, "×"),
+    el("div", { class: "cat", style: `color:${color(n)}` }, catLabel(n.category)),
+    el("h2", {}, n.label),
+    el("p", {}, n.description || ""),
+    el("div", { class: "meta" }, `Yangilangan: ${n.updatedAt} · ${adj.get(id).length} ta bog'lanish`),
+    el("div", { class: "links" }, ...adj.get(id).slice(0, 14).map((l) => el("button", { class: "chip", type: "button", onclick: () => selectNode(l.id) }, nodes.get(l.id).label))),
+    el("div", { class: "row" }, el("button", { class: "tbtn", type: "button", onclick: () => ask(`${n.label} haqida gapirib ber`) }, "JARVIS'dan so'rash")),
+  );
+  box.hidden = false;
+}
+
+const legendCats = ["person", "project", "concept", "skill", "tool", "note", "file", "task", "goal", "memory"];
+document.getElementById("legend").replaceChildren(...legendCats.map((c) => el("span", {}, el("i", { style: `background:${DATA.categories[c].color}` }), catLabel(c))));
+
+// ── Voice output (browser voice) ────────────────────────────────────
+let voiceOn = store.get("jarvis.web.voice", false);
+const voiceBtn = document.getElementById("voice");
+voiceBtn.setAttribute("aria-pressed", String(voiceOn));
+voiceBtn.onclick = () => { voiceOn = !voiceOn; voiceBtn.setAttribute("aria-pressed", String(voiceOn)); store.set("jarvis.web.voice", voiceOn); if (!voiceOn) speechSynthesis?.cancel(); else speak("Ovoz yoqildi."); };
+function speak(text) {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  const synth = speechSynthesis; synth.cancel();
+  const voices = synth.getVoices();
+  const by = (p) => voices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith(p));
+  const uz = /[oʻ'g']|\b(va|bu|men|siz|uchun|bilan)\b/i.test(text) && !/\b(the|and|you)\b/i.test(text);
+  const v = uz ? by("uz") ?? by("tr") ?? by("ru") : by("en-gb") ?? by("en");
+  const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
+  if (v) { u.voice = v; u.lang = v.lang; }
+  u.rate = 1; u.pitch = 0.92;
+  u.onstart = () => setOrb("speaking"); u.onend = u.onerror = () => setOrb("idle");
+  synth.speak(u); synth.resume();
+}
+
+// ── Chat ────────────────────────────────────────────────────────────
+const log = document.getElementById("log");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const statusEl = document.getElementById("status");
+const orb = document.getElementById("orb");
+const setOrb = (s) => orb.setAttribute("data-state", s);
+let deep = store.get("jarvis.web.deep", false);
+const deepBtn = document.getElementById("deep");
+deepBtn.setAttribute("aria-pressed", String(deep));
+deepBtn.onclick = () => { deep = !deep; deepBtn.setAttribute("aria-pressed", String(deep)); store.set("jarvis.web.deep", deep); };
+
+let turns = store.get("jarvis.web.chat", []).filter((t) => t && (t.role === "user" || t.role === "assistant") && t.content);
+let sample = null, toolsOk = false, busy = false, ctl = null, available = null;
+
+function overview() {
+  const byCat = {};
+  for (const n of nodes.values()) (byCat[n.category] ??= []).push(n.label);
+  return Object.entries(byCat).map(([c, l]) => `${DATA.categories[c]?.plural ?? c}: ${l.join("; ")}`).join("\n");
+}
+function rules() {
+  return `You are J.A.R.V.I.S., the personal AI assistant of Izzatillo (a creator from Uzbekistan who builds AI projects, a YouTube channel, and studies ICT trading). You live inside Izzatillo's knowledge operating system: an interactive knowledge graph of his projects, notes, files, tools, people, tasks, goals and memories, shown next to this chat.
+
+Speak like a capable, warm personal assistant. Answer in the language Izzatillo writes in: Uzbek (Latin script) when he writes Uzbek, otherwise his language. Keep replies conversational and short (1-5 sentences) unless he asks for detail. Plain text only: no markdown, no headings, no tables, no asterisks; your reply may be read aloud. Today is ${TODAY}.
+
+You can chat about anything, but for questions about his world use the knowledge graph: ${toolsOk ? "call search_graph / get_item / find_connection to read it, then call highlight to show the relevant items on the graph. When he asks you to remember something, call remember." : "the full list of items is below; describe what is relevant."} Never invent items that are not in the graph; say when something is not there. You cannot browse the web, send messages, run code or trade; say so if asked.
+
+Items in the graph by type:
+${overview()}`;
+}
+
+function bubble(role, text) {
+  const m = el("div", { class: `msg ${role === "user" ? "user" : "jarvis"}` },
+    el("div", { class: "who" }, role === "user" ? "Siz" : "Jarvis"),
+    el("div", { class: "text" }, text));
+  log.append(m); log.scrollTop = log.scrollHeight;
+  return m;
+}
+function renderWelcome() {
+  const box = el("div", { class: "welcome" },
+    el("h3", {}, "Salom, Izzatillo. Men shu yerdaman."),
+    el("p", {}, "Loyihalaringiz, rejalaringiz yoki istalgan mavzu haqida gaplashamiz. Bilim grafingizdan topgan narsalarimni grafda yoritib ko'rsataman."),
+    el("div", { class: "sugg" }, ...[
+      "Hozir nima ustida ishlayapman?",
+      "ICT bilan bog'liq hamma narsani ko'rsat",
+      "Claude va YouTube loyihasi qanday bog'langan?",
+      "Bugun nimadan boshlashim kerak?",
+    ].map((q) => el("button", { type: "button", onclick: () => ask(q) }, q))));
+  log.append(box);
+}
+function renderAll() {
+  log.replaceChildren();
+  if (available === false) log.append(el("div", { class: "notice" }, "Claude bu ko'rinishda ulanmagan. Sahifani claude.ai ichida (havola orqali, tizimga kirgan holda) oching. Hozircha faqat grafdan qidiruv ishlaydi."));
+  if (!turns.length) renderWelcome();
+  for (const t of turns) bubble(t.role, t.content);
+}
+function setBusy(b) {
+  busy = b; sendBtn.textContent = b ? "To'xtatish" : "Yuborish"; input.disabled = false;
+  setOrb(b ? "thinking" : "idle");
+}
+function saveTurns() { turns = turns.slice(-30); store.set("jarvis.web.chat", turns); }
+
+function makeTools(steps) {
+  const step = (t) => steps.append(el("div", {}, t));
+  return [
+    { name: "search_graph", description: "Search Izzatillo's knowledge graph by keywords (English or Uzbek words, names, topics). Returns up to 10 matching items with id, name, type, short description.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      execute({ query }) { step(`Grafdan qidirildi: “${String(query)}”`); return search(String(query), 10).map(brief); } },
+    { name: "get_item", description: "Get one item by name or id: description, content, tags, and every connected item with the relation type.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      execute({ name }) {
+        const n = resolve(String(name)); if (!n) throw new Error("Not found in the graph");
+        step(`Ochildi: ${n.label}`);
+        return { ...brief(n), content: n.content?.slice(0, 1500), tags: n.tags, connections: adj.get(n.id).map((l) => ({ id: l.id, name: nodes.get(l.id).label, relation: l.out ? l.rel : `${l.rel} (incoming)` })) };
+      } },
+    { name: "find_connection", description: "Find the shortest chain of relationships between two items (by name or id). Also shows the chain on the graph.", inputSchema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"] },
+      execute({ from, to }) {
+        const a = resolve(String(from)), b = resolve(String(to));
+        if (!a || !b) throw new Error(`Not found: ${!a ? from : to}`);
+        const p = findPath(a.id, b.id); if (!p) return { connected: false };
+        step(`Yo'l topildi: ${p.map((id) => nodes.get(id).label).join(" → ")}`);
+        showPath(p);
+        return { connected: true, chain: p.slice(1).map((id, i) => { const e = edges.find((x) => (x.s === p[i] && x.t === id) || (x.t === p[i] && x.s === id)); return `${nodes.get(e.s).label} ${e.rel} ${nodes.get(e.t).label}`; }) };
+      } },
+    { name: "highlight", description: "Highlight items on the graph next to the chat so Izzatillo sees them. Pass item ids (from search_graph/get_item); the first id is the main one.", inputSchema: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] },
+      execute({ ids }) { const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => nodes.has(id)); highlight(list, list[0]); step(`Grafda ${list.length} ta element ko'rsatildi`); return { shown: list.length }; } },
+    { name: "remember", description: "Save a new memory in the graph when Izzatillo asks to remember something. text = the fact in his words; title = a 2-6 word label; links = ids of related items.", inputSchema: { type: "object", properties: { title: { type: "string" }, text: { type: "string" }, links: { type: "array", items: { type: "string" } } }, required: ["title", "text"] },
+      execute({ title, text, links }) {
+        const m = { id: `mem-${Date.now().toString(36)}`, label: String(title).slice(0, 60), text: String(text).slice(0, 600), links: (Array.isArray(links) ? links : []).map(String).filter((id) => nodes.has(id)).slice(0, 5), date: TODAY };
+        memories.push(m); store.set("jarvis.web.memories", memories); placeMemory(m); highlight([m.id, ...m.links], m.id);
+        step(`Xotiraga saqlandi: ${m.label}`);
+        return { saved: true, id: m.id };
+      } },
+  ];
+}
+
+async function ask(text) {
+  text = String(text).trim();
+  if (!text || busy) return;
+  if (!turns.length) log.replaceChildren();
+  turns.push({ role: "user", content: text }); saveTurns();
+  bubble("user", text);
+  input.value = ""; autosize();
+
+  if (!sample) { localAnswer(text); return; }
+
+  const m = bubble("assistant", "O'ylayapman…");
+  const out = m.querySelector(".text"); out.classList.add("waiting");
+  const steps = el("div", { class: "steps" }); m.append(steps);
+  setBusy(true);
+  ctl = new AbortController();
+  try {
+    const opts = { signal: ctl.signal, cache: false, modelTier: deep ? "default" : "quick", onText: ({ text }) => { out.classList.remove("waiting"); out.textContent = text; log.scrollTop = log.scrollHeight; } };
+    if (toolsOk) opts.tools = makeTools(steps);
+    const history = turns.slice(-20);
+    const { text: answer, truncated } = await sample([{ role: "user", content: rules() }, { role: "assistant", content: "Tushundim. Men JARVIS, tayyorman." }, ...history], opts);
+    // With tools the text holds every round; the last paragraph block is the reply to show and keep.
+    const final = answer.trim();
+    out.classList.remove("waiting"); out.textContent = final;
+    turns.push({ role: "assistant", content: final }); saveTurns();
+    if (truncated) m.append(el("div", { class: "note" }, "Javob uzun bo'lib qisqartirildi. Kamroq narsa so'rab ko'ring."));
+    speak(final);
+  } catch (e) {
+    out.classList.remove("waiting");
+    const code = e?.code || "upstream_error";
+    if (e?.text && code !== "refused") { out.textContent = e.text; turns.push({ role: "assistant", content: e.text }); saveTurns(); } else out.textContent = code === "cancelled" ? "To'xtatildi." : "—";
+    const msg = {
+      cancelled: null,
+      not_granted: "Claude'dan foydalanishga ruxsat berilmadi. Ruxsat berish uchun sahifani qayta oching va so'ralganda \"Allow\" ni bosing.",
+      sampling_disabled: "Bu hisobda Claude o'chirilgan.",
+      rate_limited: "Juda ko'p so'rov yoki limit tugadi. Birozdan keyin yana yozing.",
+      session_expired: "claude.ai'ga qayta kiring.",
+      refused: "Claude bu so'rovga javob bermadi. Boshqacha so'rab ko'ring.",
+      prompt_too_large: "Suhbat juda uzun bo'ldi. Tozalash tugmasini bosing.",
+      tools_unavailable: "Graf vositalari bu ko'rinishda ishlamaydi.",
+    }[code] ?? "Ulanishda xato bo'ldi. Qayta yuborib ko'ring.";
+    if (msg) m.append(el("div", { class: "note bad" }, msg));
+    if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled"].includes(code)) { sample = null; setStatus(false); }
+  } finally {
+    if (!steps.childElementCount) steps.remove();
+    setBusy(false); ctl = null;
+  }
+}
+
+function localAnswer(text) {
+  const found = search(text, 8);
+  let answer;
+  if (found.length) { highlight(found.map((n) => n.id), found[0].id); answer = `Grafdan topdim: ${found.map((n) => n.label).join(", ")}. To'liq suhbat uchun bu sahifani claude.ai ichida oching.`; }
+  else answer = "Hozir Claude ulanmagan, grafdan ham mos narsa topmadim. Sahifani claude.ai ichida oching.";
+  bubble("assistant", answer); turns.push({ role: "assistant", content: answer }); saveTurns();
+}
+
+function setStatus(on) {
+  available = on;
+  statusEl.textContent = on ? "Claude ulangan" : "Faqat qidiruv";
+  statusEl.className = on ? "on" : "off";
+  renderAll();
+}
+
+function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; }
+input.addEventListener("input", autosize);
+input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(input.value); } });
+document.getElementById("compose").addEventListener("submit", (e) => { e.preventDefault(); if (busy) ctl?.abort(); else ask(input.value); });
+
+let clearArmed = false;
+const clearBtn = document.getElementById("clear");
+clearBtn.onclick = () => {
+  if (!clearArmed) { clearArmed = true; clearBtn.textContent = "Ishonchingiz komilmi?"; setTimeout(() => { clearArmed = false; clearBtn.textContent = "Tozalash"; }, 3000); return; }
+  clearArmed = false; clearBtn.textContent = "Tozalash";
+  ctl?.abort(); turns = []; saveTurns(); renderAll(); clearFocus(true);
+};
+
+// ── Boot ────────────────────────────────────────────────────────────
+resize(); fit(null, true);
+renderAll();
+(async () => {
+  try {
+    sample = window.claude ? await window.claude.use("sample") : null;
+    if (sample) { const lim = await sample.limits().catch(() => null); toolsOk = Boolean(lim?.tools); }
+  } catch { sample = null; }
+  setStatus(Boolean(sample));
+})();
+</script>
