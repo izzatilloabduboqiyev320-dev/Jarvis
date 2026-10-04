@@ -29,6 +29,15 @@ export type Focus =
   | { kind: "path"; nodes: string[] }
   | { kind: "query"; nodes: string[]; anchors: string[]; label: string };
 
+export interface Approval {
+  id: string;
+  summary: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  ts: number;
+  /** The JARVIS reply this request belongs to (the card shows just above it). */
+  replyId?: number;
+}
+
 export type VoiceLang = "uz-UZ" | "en-US";
 export const VOICE_LANG_KEY = "jarvis.voice-lang.v1";
 export const CHAT_KEY = "jarvis.chat.v1";
@@ -63,6 +72,10 @@ interface JarvisStore {
   graphError: string | null;
   messages: ChatMessage[];
   activity: ActivityItem[];
+  /** "Ha / Yo'q" requests for actions on the computer. */
+  approvals: Approval[];
+  /** Hands-free conversation mode is on (approvals can then be answered by voice). */
+  talking: boolean;
 
   setReady: (v: boolean) => void;
   setStatus: (s: AppStatus) => void;
@@ -84,6 +97,9 @@ interface JarvisStore {
   updateMessage: (id: number, text: string) => void;
   setMessages: (m: ChatMessage[]) => void;
   log: (kind: ActivityKind, text: string) => void;
+  addApproval: (id: string, summary: string, replyId?: number) => void;
+  setApproval: (id: string, status: Approval["status"]) => void;
+  setTalking: (v: boolean) => void;
 }
 
 let seq = 0;
@@ -106,6 +122,8 @@ export const useJarvis = create<JarvisStore>((set) => ({
   graphError: null,
   messages: [],
   activity: [],
+  approvals: [],
+  talking: false,
 
   setReady: (ready) => set({ ready }),
   setStatus: (status) => set({ status }),
@@ -154,4 +172,8 @@ export const useJarvis = create<JarvisStore>((set) => ({
   },
   log: (kind, text) =>
     set((s) => ({ activity: [...s.activity, { id: ++seq, ts: Date.now(), kind, text }].slice(-200) })),
+  addApproval: (id, summary, replyId) =>
+    set((s) => ({ approvals: [...s.approvals, { id, summary, status: "pending" as const, ts: Date.now(), replyId }].slice(-10) })),
+  setApproval: (id, status) => set((s) => ({ approvals: s.approvals.map((a) => (a.id === id ? { ...a, status } : a)) })),
+  setTalking: (talking) => set({ talking }),
 }));

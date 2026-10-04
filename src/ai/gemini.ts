@@ -161,7 +161,7 @@ export async function runGeminiAgent(req: ChatRequest, signal: AbortSignal, emit
       const call = p.functionCall!;
       let response: Record<string, unknown>;
       try {
-        response = { result: await runTool(call.name, call.args ?? {}, emit) };
+        response = { result: await runTool(call.name, call.args ?? {}, emit, signal) };
       } catch (err) {
         response = { error: (err as Error).message };
       }

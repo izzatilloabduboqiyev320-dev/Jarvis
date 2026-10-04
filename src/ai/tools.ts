@@ -4,15 +4,18 @@ import type { ItemCategory } from "@/knowledge/items";
 import { addItem, getGraphData, setTaskStatus } from "@/server/store";
 import { botGraph, botNodeId, checkBots } from "@/server/telegram";
 import type { KGEdge, KGNode } from "@/types/graph";
+import { requestApproval, type ApprovalEvent } from "@/server/approvals";
+import { describe, parseAction, perform } from "@/server/computer";
 
 /**
  * Tools JARVIS's AI brain can call while answering. Each runs here on the
  * server against the knowledge graph, and reports what it did to the browser
  * as an event (so the graph updates live and the activity stream stays honest).
  *
- * Safety: tools can read, create and mark tasks done. Nothing deletes or
- * changes existing knowledge. The only outside call is check_bots, which asks
- * Telegram read-only questions about Izzatillo's own bots (sends nothing).
+ * Safety: graph tools can read, create and mark tasks done; nothing deletes or
+ * changes existing knowledge. check_bots asks Telegram read-only questions.
+ * Computer tools (open_app, open_website, set_volume, take_screenshot) run a
+ * fixed, validated command and ONLY after Izzatillo presses "Ha" on screen.
  */
 
 export type ChatEvent =
@@ -20,7 +23,8 @@ export type ChatEvent =
   | { t: "tool"; name: string; summary: string }
   | { t: "created"; node: KGNode; edges: KGEdge[] }
   | { t: "updated"; node: KGNode; edges?: KGEdge[] }
-  | { t: "focus"; ids: string[]; path?: boolean };
+  | { t: "focus"; ids: string[]; path?: boolean }
+  | ApprovalEvent;
 
 export interface ToolSpec {
   name: string;
@@ -50,7 +54,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "show_on_graph",
-    description: "Highlight items on Izzatillo's screen. Call this after finding the items an answer is about.",
+    description: "Highlight items on Izzatillo's screen. Call ttheir after finding the items an answer is about.",
     parameters: { type: "object", properties: { ids }, required: ["ids"] },
   },
   {
@@ -61,28 +65,50 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: "save_memory",
     description:
-      "Permanently remember a fact, decision or preference Izzatillo tells you (when he says remember / eslab qol / yodda tut, or shares something clearly worth keeping). Link it to related item ids.",
-    parameters: { type: "object", properties: { title: { ...str, description: "2-6 word label" }, text: { ...str, description: "The fact, in his words" }, links: ids }, required: ["title", "text"] },
+      "Permanently remember a fact, decision or preference Izzatillo tells you (when they say remember / eslab qol / yodda tut, or shares something clearly worth keeping). Link it to related item ids.",
+    parameters: { type: "object", properties: { title: { ...str, description: "2-6 word label" }, text: { ...str, description: "The fact, in their words" }, links: ids }, required: ["title", "text"] },
   },
   {
     name: "create_task",
-    description: "Create a task for Izzatillo (when he asks to add a task / vazifa qo'sh / remind him to do something). Link it to related item ids.",
+    description: "Create a task for Izzatillo (when they ask to add a task / vazifa qo'sh / remind them to do something). Link it to related item ids.",
     parameters: { type: "object", properties: { title: str, details: str, links: ids }, required: ["title"] },
   },
   {
     name: "add_note",
-    description: "Save a note (an idea, plan or piece of information he dictates). Link it to related item ids.",
+    description: "Save a note (an idea, plan or piece of information they dictate). Link it to related item ids.",
     parameters: { type: "object", properties: { title: str, text: str, links: ids }, required: ["title", "text"] },
   },
   {
     name: "check_bots",
     description:
-      "Check Izzatillo's connected Telegram bots right now: whether each token works, whether it is receiving messages (webhook errors, messages waiting unanswered). Use when he asks about his bots / botlarim ishlayaptimi.",
+      "Check Izzatillo's connected Telegram bots right now: whether each token works, whether it is receiving messages (webhook errors, messages waiting unanswered). Use when they ask about their bots / botlarim ishlayaptimi.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "open_app",
+    description:
+      "Open an application on Izzatillo's Mac, e.g. Telegram, Safari, Google Chrome, Notes, Calendar, Music, TradingView. Use the app's usual English name. They are asked to approve first.",
+    parameters: { type: "object", properties: { app: str }, required: ["app"] },
+  },
+  {
+    name: "open_website",
+    description:
+      "Open a web page in their browser (https only). Build the URL yourself: YouTube search https://www.youtube.com/results?search_query=..., Google https://www.google.com/search?q=..., TradingView chart https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT. They are asked to approve first.",
+    parameters: { type: "object", properties: { url: str }, required: ["url"] },
+  },
+  {
+    name: "set_volume",
+    description: "Set the Mac's output volume (0-100). They are asked to approve first.",
+    parameters: { type: "object", properties: { level: { type: "number" } }, required: ["level"] },
+  },
+  {
+    name: "take_screenshot",
+    description: "Take a screenshot of their screen and save it to the Desktop. They are asked to approve first.",
     parameters: { type: "object", properties: {} },
   },
   {
     name: "complete_task",
-    description: "Mark one of Izzatillo's saved tasks as done (only when he says it is finished).",
+    description: "Mark one of Izzatillo's saved tasks as done (only when they say it is finished).",
     parameters: { type: "object", properties: { id: str }, required: ["id"] },
   },
 ];
@@ -136,7 +162,7 @@ function brief(graph: KnowledgeGraph, id: string) {
 const toList = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : []);
 
 /** Runs one tool call. Returns plain data for the model; reports effects through `emit`. */
-export async function runTool(name: string, input: Record<string, unknown>, emit: (e: ChatEvent) => void): Promise<unknown> {
+export async function runTool(name: string, input: Record<string, unknown>, emit: (e: ChatEvent) => void, signal: AbortSignal): Promise<unknown> {
   const graph = createGraph(await getGraphData());
   const s = (k: string) => String(input[k] ?? "").trim();
   console.info(`[jarvis tool] ${name} ${JSON.stringify(input).slice(0, 200)}`);
@@ -205,13 +231,25 @@ export async function runTool(name: string, input: Record<string, unknown>, emit
     }
     case "check_bots": {
       const bots = await checkBots();
-      if (!bots.length) return { bots: [], note: "No Telegram bots are connected yet. He can add one in Settings → Telegram botlar." };
+      if (!bots.length) return { bots: [], note: "No Telegram bots are connected yet. They can add one in Settings → Telegram botlar." };
       const g = botGraph(bots, (id) => graph.hasNode(id));
       for (const node of g.nodes) emit({ t: "updated", node, edges: g.edges.filter((e) => e.source === node.id || e.target === node.id) });
       emit({ t: "focus", ids: bots.map(botNodeId) });
       const bad = bots.filter((b) => b.status && b.status.health !== "ok").length;
       emit({ t: "tool", name, summary: `Checked ${bots.length} Telegram bot(s)${bad ? ` — ${bad} need attention` : " — all fine"}` });
       return bots.map((b) => ({ id: botNodeId(b), username: `@${b.username}`, name: b.name, ...b.status }));
+    }
+    case "open_app":
+    case "open_website":
+    case "set_volume":
+    case "take_screenshot": {
+      const action = parseAction(name, input);
+      const summary = describe(action);
+      emit({ t: "tool", name, summary: `Asking permission: ${summary}` });
+      if (!(await requestApproval(summary, emit, signal))) return { done: false, reason: "Izzatillo did not approve this. Do not retry; say so briefly." };
+      const result = await perform(action);
+      emit({ t: "tool", name, summary: `Done: ${summary}` });
+      return { done: true, result };
     }
     case "complete_task": {
       const node = await setTaskStatus(s("id"), "done");

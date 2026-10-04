@@ -46,6 +46,7 @@ export default function JarvisHud() {
   const endTalk = () => {
     talkRef.current = false;
     setTalkMode(false);
+    useJarvis.getState().setTalking(false);
     stopRef.current?.();
     stopRef.current = null;
   };
@@ -112,6 +113,7 @@ export default function JarvisHud() {
     talkRef.current = true;
     missesRef.current = 0;
     setTalkMode(true);
+    useJarvis.getState().setTalking(true);
     if (!useJarvis.getState().voiceReplies) useJarvis.getState().setVoiceReplies(true);
     if (!stopRef.current) listen();
   };

@@ -10,6 +10,7 @@ import { graphCommands } from "@/lib/graph-commands";
 import { getGraph, persistLocal } from "@/lib/graph-instance";
 import { CHAT_KEY, useJarvis } from "@/lib/store";
 import { speak, speakGemini } from "@/voice/speak";
+import { startPushToTalk } from "@/voice/push-to-talk";
 import type { KGEdge, KGNode } from "@/types/graph";
 
 /**
@@ -96,6 +97,50 @@ function focusIds(ids: string[], path?: boolean) {
   applyResult({ intent: "topic", answer: "", nodes: list, anchors: [list[0]], path: path ? list : undefined });
 }
 
+// ── Approvals ("Ha / Yo'q") ─────────────────────────────────────────────
+
+let stopVoiceAnswer: (() => void) | null = null;
+/** The JARVIS reply currently streaming (approval cards attach to it). */
+let replyId: number | undefined;
+
+/** Sends the user's answer to a pending computer action. */
+export async function answerApproval(id: string, approved: boolean) {
+  stopVoiceAnswer?.();
+  await fetch("/api/approvals", { method: "POST", headers: { "Content-Type": "application/json", "x-jarvis-local": "1" }, body: JSON.stringify({ id, approved }) }).catch(
+    () => useJarvis.getState().log("error", "Could not send the answer"),
+  );
+}
+
+const NO = /(yo'?q|yoq|no\b|kerak emas|bekor|to'xta|stop|cancel)/i;
+const YES = /(\bha+\b|\bxa\b|mayli|ruxsat|yes|ok(ay)?\b|albatta|bo'ladi|roziman|\boch\b|davom)/i;
+
+/** Shows the card; in conversation mode also asks aloud and listens for "ha" / "yo'q". */
+async function askApproval(id: string, summary: string) {
+  const s = useJarvis.getState();
+  s.addApproval(id, summary, replyId);
+  s.setHud("executing", "Ruxsat kutilmoqda");
+  s.log("system", `Waiting for your approval: ${summary}`);
+  if (!s.talking) return;
+  const uz = s.voiceLang === "uz-UZ";
+  await say(uz ? `Ruxsat berasizmi? ${summary}.` : `May I? ${summary}.`, uz ? "uz" : "en");
+  if (useJarvis.getState().approvals.find((a) => a.id === id)?.status !== "pending") return;
+  stopVoiceAnswer = startPushToTalk(
+    {
+      onFinal: (text) => {
+        const t = text.toLowerCase().replace(/[’‘ʻʼ`]/g, "'");
+        if (NO.test(t)) void answerApproval(id, false);
+        else if (YES.test(t)) void answerApproval(id, true);
+        else useJarvis.getState().log("system", `Heard “${text}” — press Ha or Yo'q`);
+      },
+      onError: () => {},
+      onEnd: () => {
+        stopVoiceAnswer = null;
+      },
+    },
+    s.voiceLang,
+  );
+}
+
 /** Runs the AI via /api/chat (NDJSON events); throws with a readable message on failure. */
 async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t: string) => void): Promise<string> {
   const s = useJarvis.getState();
@@ -130,7 +175,15 @@ async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t:
     } else if (e.t === "created") {
       mergeItem(e.node, e.edges);
       s.log("memory", `Saved ${e.node.category} “${e.node.label}” (permanent)`);
-    } else if (e.t === "updated") syncNodes([e.node], e.edges ?? []); else if (e.t === "focus") focusIds(e.ids, e.path);
+    } else if (e.t === "updated") syncNodes([e.node], e.edges ?? []);
+    else if (e.t === "focus") focusIds(e.ids, e.path);
+    else if (e.t === "approval") void askApproval(e.id, e.summary);
+    else if (e.t === "approval-done") {
+      stopVoiceAnswer?.();
+      s.setApproval(e.id, e.approved ? "approved" : e.reason ? "expired" : "denied");
+      const what = useJarvis.getState().approvals.find((a) => a.id === e.id)?.summary ?? "";
+      s.log(e.approved ? "system" : "error", `${e.approved ? "Approved" : e.reason === "timeout" ? "No answer — cancelled" : "Declined"}: ${what}`);
+    }
   };
   for (;;) {
     const { done, value } = await reader.read();
@@ -203,7 +256,10 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
       result.anchors = [node.id];
     }
 
-    if (!(aiMode && result.create)) applyResult(result);
+    if (aiMode && result.open && !result.open.startsWith("page:")) {
+      // "…ni och" may mean the app on the computer: the AI decides; just highlight the item.
+      applyResult({ ...result, open: undefined, nodes: result.nodes.length ? result.nodes : [result.open], anchors: [result.open] });
+    } else if (!(aiMode && result.create)) applyResult(result);
 
     const lang = result.lang ?? detectLang(text);
     let answer = result.answer;
@@ -213,6 +269,7 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
       s.setHud("thinking", `Asking ${name}`);
       s.log("ai", `Asking ${name}`);
       const id = s.addMessage("jarvis", "");
+      replyId = id;
       try {
         answer = await streamChat(result, lang, (partial) => useJarvis.getState().updateMessage(id, partial));
         brain = name;
