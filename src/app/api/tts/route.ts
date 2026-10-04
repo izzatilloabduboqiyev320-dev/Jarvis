@@ -1,6 +1,11 @@
 import { getAIConfig } from "@/ai/config";
 import { GeminiError, geminiSpeech } from "@/ai/gemini";
 import { isLocalRequest } from "@/ai/key-store";
+import { shared } from "@/server/shared";
+
+/** After Gemini's voice limit runs out, skip it for a while (the browser voice speaks instead). */
+const COOL_DOWN_MS = 15 * 60_000;
+const S = shared("tts", () => ({ limitedUntil: 0 }));
 
 /**
  * POST /api/tts {text} → audio/wav spoken by Gemini.
@@ -17,12 +22,14 @@ export async function POST(request: Request) {
     /* invalid JSON */
   }
   if (!text) return Response.json({ error: "bad_request" }, { status: 400 });
+  if (Date.now() < S.limitedUntil) return Response.json({ error: "limit" }, { status: 429 });
   try {
     const audio = await geminiSpeech(text, request.signal);
     return new Response(new Uint8Array(audio), { headers: { "Content-Type": "audio/wav", "Cache-Control": "no-store" } });
   } catch (err) {
     console.error("[api/tts]", err instanceof Error ? err.message : err);
     const status = err instanceof GeminiError ? err.status : 502;
+    if (status === 429) S.limitedUntil = Date.now() + COOL_DOWN_MS;
     return Response.json({ error: "upstream", message: status === 401 || status === 403 ? "The Gemini API key is invalid" : "Gemini voice unavailable" }, { status: 502 });
   }
 }

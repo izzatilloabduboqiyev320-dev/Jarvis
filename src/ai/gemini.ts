@@ -117,6 +117,28 @@ export async function geminiSpeech(text: string, signal?: AbortSignal): Promise<
 
 // ── Chat ──────────────────────────────────────────────────────────────
 
+/**
+ * Each Gemini model has its own free daily limit, so when one is used up (429)
+ * the request moves on to a lighter model instead of failing.
+ */
+const BACKUP_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+
+async function generate(model: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+  const models = [model, ...BACKUP_MODELS.filter((m) => m !== model)];
+  let last: unknown;
+  for (const [i, m] of models.entries()) {
+    try {
+      return await post(`/v1beta/models/${encodeURIComponent(m)}:generateContent`, body, signal);
+    } catch (err) {
+      if (!last) last = err; // report the first model's limit, not a later 404
+      // Only a used-up limit moves on; a missing backup model (404) is skipped too.
+      const s = err instanceof GeminiError ? err.status : 0;
+      if (s !== 429 && !(i > 0 && s === 404)) throw err;
+    }
+  }
+  throw last;
+}
+
 interface GeminiPart {
   text?: string;
   thought?: boolean;
@@ -134,8 +156,8 @@ export async function runGeminiAgent(req: ChatRequest, signal: AbortSignal, emit
   const contents: GeminiContent[] = req.messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   const tools = [{ functionDeclarations: TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const res = await post(
-      `/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+    const res = await generate(
+      geminiModel,
       {
         systemInstruction: { parts: [{ text: systemPrompt(req) }] },
         contents,
@@ -174,8 +196,8 @@ export async function runGeminiAgent(req: ChatRequest, signal: AbortSignal, emit
 /** Speech-to-text for Telegram voice messages (OGG/Opus), Uzbek or English. */
 export async function transcribe(audio: Buffer, mime: string, signal?: AbortSignal): Promise<string> {
   const { geminiModel } = getAIConfig();
-  const res = await post(
-    `/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+  const res = await generate(
+    geminiModel,
     {
       contents: [
         {
