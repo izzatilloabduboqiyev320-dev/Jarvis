@@ -56,3 +56,17 @@ export function clearLocal() {
     /* ignore */
   }
 }
+
+/** Moves items saved in this browser (older JARVIS versions) into permanent storage on the computer. */
+export async function migrateLocal(): Promise<number> {
+  const data = loadLocal();
+  if (!data.nodes.length) return 0;
+  try {
+    const res = await fetch("/api/items/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (!res.ok) return 0;
+    clearLocal();
+    return data.nodes.length;
+  } catch {
+    return 0;
+  }
+}

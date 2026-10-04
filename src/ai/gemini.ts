@@ -1,7 +1,8 @@
 import "server-only";
 import { getAIConfig } from "@/ai/config";
 import type { ChatRequest } from "@/ai/chat-types";
-import { systemPrompt } from "@/ai/claude";
+import { MAX_ROUNDS, systemPrompt } from "@/ai/claude";
+import { runTool, TOOL_SPECS, type ChatEvent } from "@/ai/tools";
 import type { Verify } from "@/ai/key-route";
 
 /**
@@ -116,37 +117,56 @@ export async function geminiSpeech(text: string, signal?: AbortSignal): Promise<
 
 // ── Chat ──────────────────────────────────────────────────────────────
 
-/** Streams a Gemini chat reply as plain text chunks (used when no Claude key is set). */
-export async function* streamGemini(req: ChatRequest, signal: AbortSignal): AsyncGenerator<string> {
+interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+  functionCall?: { name: string; args?: Record<string, unknown>; id?: string };
+  [k: string]: unknown;
+}
+interface GeminiContent {
+  role: string;
+  parts: GeminiPart[];
+}
+
+/** Runs Gemini with JARVIS's tools until it answers (used when no Claude key is set). */
+export async function runGeminiAgent(req: ChatRequest, signal: AbortSignal, emit: (e: ChatEvent) => void): Promise<void> {
   const { geminiModel } = getAIConfig();
-  const res = await post(
-    `/v1beta/models/${encodeURIComponent(geminiModel)}:streamGenerateContent?alt=sse`,
-    {
-      systemInstruction: { parts: [{ text: systemPrompt(req) }] },
-      contents: req.messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-      generationConfig: { maxOutputTokens: 1024 },
-    },
-    signal,
-  );
-  if (!res.body) return;
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
+  const contents: GeminiContent[] = req.messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  const tools = [{ functionDeclarations: TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const res = await post(
+      `/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+      {
+        systemInstruction: { parts: [{ text: systemPrompt(req) }] },
+        contents,
+        ...(round < MAX_ROUNDS - 1 ? { tools } : {}),
+        generationConfig: { maxOutputTokens: 1024 },
+      },
+      signal,
+    );
+    const json = (await res.json()) as { candidates?: { content?: GeminiContent }[] };
+    const content = json.candidates?.[0]?.content;
+    if (!content?.parts?.length) throw new GeminiError("Gemini returned an empty answer", 502);
+    const text = content.parts
+      .filter((p) => p.text && !p.thought)
+      .map((p) => p.text)
+      .join("");
+    const calls = content.parts.filter((p) => p.functionCall);
+    if (text) emit({ t: "text", v: calls.length ? text + "\n\n" : text });
+    if (!calls.length) return;
+    // Send the model's turn back unchanged (it may carry thought signatures Gemini needs).
+    contents.push({ role: "model", parts: content.parts });
+    const responses: GeminiPart[] = [];
+    for (const p of calls) {
+      const call = p.functionCall!;
+      let response: Record<string, unknown>;
       try {
-        const j = JSON.parse(line.slice(5)) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-        const t = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("");
-        if (t) yield t;
-      } catch {
-        /* partial or keep-alive line */
+        response = { result: await runTool(call.name, call.args ?? {}, emit) };
+      } catch (err) {
+        response = { error: (err as Error).message };
       }
+      responses.push({ functionResponse: { name: call.name, ...(call.id ? { id: call.id } : {}), response } });
     }
+    contents.push({ role: "user", parts: responses });
   }
 }

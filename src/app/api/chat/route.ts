@@ -1,12 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { streamClaude } from "@/ai/claude";
-import { GeminiError, streamGemini } from "@/ai/gemini";
+import { runClaudeAgent } from "@/ai/claude";
+import { GeminiError, runGeminiAgent } from "@/ai/gemini";
+import type { ChatEvent } from "@/ai/tools";
 import { isLocalRequest } from "@/ai/key-store";
 import { getAIConfig } from "@/ai/config";
 import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
 
 /**
- * POST /api/chat — streams JARVIS's reply (Claude, or Gemini when only its key is set) as plain text.
+ * POST /api/chat — runs JARVIS's AI (Claude, or Gemini when only its key is set) with graph tools
+ * and streams newline-delimited JSON events: text, tool, created, updated, focus.
  * 503 when no AI key is set (the client then uses the local brain).
  */
 
@@ -83,41 +85,55 @@ export async function POST(request: Request) {
   }
   if (!req) return Response.json({ error: "bad_request", message: "Invalid chat request" }, { status: 400 });
 
-  const iterator = provider === "claude" ? streamClaude(req, request.signal) : streamGemini(req, request.signal);
-  // Pull the first chunk before responding so auth/model errors become a proper status code.
-  let first: IteratorResult<string>;
-  try {
-    first = await iterator.next();
-  } catch (err) {
-    const status = err instanceof Anthropic.APIError && err.status ? err.status : err instanceof GeminiError ? (err.status === 403 || err.status === 400 ? 401 : err.status) : 502;
+  // Run the agent; events flow into a queue that the response streams as NDJSON.
+  const queue: ChatEvent[] = [];
+  let wake: (() => void) | null = null;
+  let done = false;
+  let failure: unknown = null;
+  const emit = (e: ChatEvent) => {
+    queue.push(e);
+    wake?.();
+  };
+  const run = provider === "claude" ? runClaudeAgent : runGeminiAgent;
+  void run(req, request.signal, emit)
+    .catch((err) => {
+      failure = err;
+    })
+    .finally(() => {
+      done = true;
+      wake?.();
+    });
+  const next = () => new Promise<void>((r) => (wake = r));
+
+  // Wait for the first event so auth/model errors become a proper status code.
+  while (!queue.length && !done) await next();
+  if (!queue.length && failure) {
+    const err = failure;
+    const status = err instanceof Anthropic.APIError && err.status ? err.status : err instanceof GeminiError ? (err.status === 403 ? 401 : err.status) : 502;
     const message =
       status === 401
         ? `The ${provider === "claude" ? "Claude" : "Gemini"} API key is invalid`
         : status === 404
           ? `The configured model was not found (check ${provider === "claude" ? "JARVIS_MODEL" : "GEMINI_MODEL"})`
           : status === 429
-            ? "AI rate limit reached"
+            ? "AI rate limit reached — wait a minute"
             : "JARVIS AI service unavailable";
     console.error("[api/chat]", err instanceof Error ? err.message : err);
-    return Response.json({ error: "upstream", message }, { status: status === 401 ? 401 : 502 });
+    return Response.json({ error: "upstream", message }, { status: status === 401 ? 401 : status === 429 ? 429 : 502 });
   }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      try {
-        if (!first.done) controller.enqueue(encoder.encode(first.value));
-        for (let r = await iterator.next(); !r.done; r = await iterator.next()) controller.enqueue(encoder.encode(r.value));
-      } catch (err) {
-        console.error("[api/chat] stream", err instanceof Error ? err.message : err);
-      } finally {
-        controller.close();
+      for (;;) {
+        while (queue.length) controller.enqueue(encoder.encode(JSON.stringify(queue.shift()) + "\n"));
+        if (done) break;
+        await next();
       }
-    },
-    cancel() {
-      void iterator.return?.(undefined);
+      if (failure) console.error("[api/chat] stream", failure instanceof Error ? failure.message : failure);
+      controller.close();
     },
   });
 
-  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" } });
 }

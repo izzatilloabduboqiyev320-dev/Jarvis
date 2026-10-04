@@ -27,10 +27,10 @@ With only a Gemini key, Gemini also writes the answers; with a Claude key too, C
 ### Chat with Claude
 
 1. Create a key at https://console.anthropic.com → API Keys (billing must be set up there).
-2. In JARVIS open **Settings → Claude API key**, paste the key and press **Saqlash** (Save). JARVIS checks the key, writes it to `.env.local` and switches to Claude immediately, no restart needed. (Or edit `.env.local` by hand and restart.)
+2. In JARVIS open **Settings → Claude API key**, paste the key and press **Saqlash** (Save). JARVIS checks the key, saves it in `~/.jarvis/keys.env` (only your user can read it) and switches to Claude immediately, no restart needed. (Keys in `.env.local` also work.)
 3. The HUD shows "online" and the chat (bottom-right of the graph, or /chat) answers with Claude, using the matching parts of your knowledge graph as context.
 
-The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never sent to the browser. `.env.local` is git-ignored. Optional: `JARVIS_MODEL` picks another Claude model.
+The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never sent to the browser. `~/.jarvis` is outside the project folder, so updating or reinstalling JARVIS keeps your keys. Optional: `JARVIS_MODEL` picks another Claude model.
 
 For a faster production build: `npm run build && npm start`.
 
@@ -46,7 +46,8 @@ For a faster production build: `npm run build && npm start`.
 | Filter | every category with coloured dot, count and toggle, instant |
 | Search / Ask | natural language: "Find everything related to YouTube", "Show all projects connected to Claude", "Find files related to ICT", "How are Claude and my YouTube project connected?", "What am I working on?" |
 | Command palette | `⌘K` / `Ctrl+K` or click the HUD: Ask Jarvis, Search Memory, Search Files, Add Note, Create Task, Import File, navigation, voice replies |
-| Memory (local) | "Remember that…", "Create a task…", "Add note…" create linked nodes that survive reloads (browser storage until SQLite in Phase 3) |
+| Memory (permanent) | Memories, tasks and notes are saved in `~/.jarvis/jarvis-store.json` on this computer and survive reloads, restarts and updates. Saved items can be marked done or deleted from the Inspector |
+| AI actions | With a Claude or Gemini key, JARVIS uses tools: searches the graph, opens items, traces connections, highlights results, lists tasks, saves memories/tasks/notes and marks tasks done ("…ni eslab qol", "vazifa qo'sh: …", "vazifalarim qanday?"). Tools run on the server, are logged, and cannot delete anything or reach outside this computer |
 | JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
 | Chat | chat window on the graph page and /chat; streams Claude replies when `ANTHROPIC_API_KEY` is set, otherwise the local brain answers; history kept in the browser |
 | Activity stream | every step JARVIS takes, timestamped |
@@ -72,5 +73,7 @@ npm run check   # lint + typecheck + query-engine smoke test + production build
 | `src/lib/store.ts` | app state (selection, focus, filters, HUD, activity) |
 | `src/components/hud/JarvisHud.tsx` + `src/app/globals.css` | the HUD and the design system |
 | `src/app/api/graph`, `src/app/api/status` | server routes (graph data; AI status, never exposes keys) |
+| `src/ai/tools.ts` | the tools the AI can use, and the events they send to the screen |
+| `src/server/store.ts` | permanent storage for memories, tasks and notes (`~/.jarvis`, set `JARVIS_HOME` to move it) |
 
 See `docs/ARCHITECTURE.md` for how it fits together and the roadmap.

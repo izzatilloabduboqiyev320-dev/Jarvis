@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CATEGORIES } from "@/knowledge/categories";
 import { describePath } from "@/knowledge/graph";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
-import { askJarvis } from "@/services/jarvis";
+import { askJarvis, deleteItem, setTaskDone } from "@/services/jarvis";
 import { formatDate, relativeTime } from "@/lib/format";
 import { Dot, PanelTitle } from "@/components/layout/ui";
 
@@ -24,6 +24,7 @@ export default function Inspector() {
   const graphVersion = useJarvis((s) => s.graphVersion);
   const select = useJarvis((s) => s.select);
   const openViewer = useJarvis((s) => s.openViewer);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const info = useMemo(() => {
     void graphVersion;
@@ -74,6 +75,9 @@ export default function Inspector() {
 
   const { node, connections, degree } = info;
   const cat = CATEGORIES[node.category];
+  // Items JARVIS saved for the user can be completed or deleted; demo knowledge is read-only.
+  const own = node.source.startsWith("JARVIS");
+  const done = node.metadata?.status === "done";
 
   return (
     <section className="panel-section flex min-h-0 flex-col" data-testid="inspector">
@@ -142,7 +146,32 @@ export default function Inspector() {
         >
           Center
         </ActionButton>
+        {own && node.category === "task" && (
+          <ActionButton onClick={() => setTaskDone(node.id, !done)} testId="task-done">
+            {done ? "Qayta ochish" : "Bajarildi ✓"}
+          </ActionButton>
+        )}
+        {own && confirming !== node.id && (
+          <ActionButton onClick={() => setConfirming(node.id)} testId="item-delete">
+            O&apos;chirish
+          </ActionButton>
+        )}
       </div>
+      {own && confirming === node.id && (
+        <div className="mt-2 flex items-center gap-2 border border-red-400/40 bg-red-400/5 px-2 py-1.5 text-[11px] text-ink-dim" data-testid="delete-confirm">
+          <span className="flex-1">Rostdan o&apos;chirilsinmi?</span>
+          <ActionButton
+            onClick={() => {
+              setConfirming(null);
+              void deleteItem(node.id);
+            }}
+            testId="delete-yes"
+          >
+            Ha
+          </ActionButton>
+          <ActionButton onClick={() => setConfirming(null)}>Yo&apos;q</ActionButton>
+        </div>
+      )}
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1" data-testid="inspector-connections">
         <div className="mb-1 font-mono text-[9.5px] uppercase tracking-[0.18em] text-ink-faint">Connections</div>
@@ -172,10 +201,11 @@ export default function Inspector() {
   );
 }
 
-function ActionButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function ActionButton({ children, onClick, testId }: { children: React.ReactNode; onClick: () => void; testId?: string }) {
   return (
     <button
       onClick={onClick}
+      data-testid={testId}
       className="border border-line px-2 py-[3px] font-mono text-[10px] uppercase tracking-wider text-ink-dim transition hover:border-accent/60 hover:text-accent"
     >
       {children}

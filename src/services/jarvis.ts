@@ -1,7 +1,9 @@
 "use client";
 
 import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
+import type { ChatEvent } from "@/ai/tools";
 import { addEdgeToGraph, addNodeToGraph, refreshSizes, topHubs } from "@/knowledge/graph";
+import { buildItem, type ItemCategory } from "@/knowledge/items";
 import { detectLang } from "@/knowledge/uzbek";
 import { runQuery, type QueryResult } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
@@ -11,13 +13,13 @@ import { speak, speakGemini } from "@/voice/speak";
 import type { KGEdge, KGNode } from "@/types/graph";
 
 /**
- * JARVIS request pipeline (demo brain).
+ * JARVIS request pipeline.
  *
- *   understand intent → search graph → (tool / create) → respond → speak
+ *   understand intent → search graph → (AI with tools | local brain) → respond → speak
  *
- * Every step is written to the activity stream so actions stay transparent.
- * Phase 2 inserts Claude between "understand" and "respond" via /api/chat,
- * with the query engine exposed to it as tools.
+ * With an AI key, Claude or Gemini answers via /api/chat and acts on the graph
+ * through server-side tools (search, save memory/task/note…); without one, the
+ * local brain answers. Every step is written to the activity stream.
  */
 
 function saveChat() {
@@ -59,11 +61,28 @@ function buildContext(result: QueryResult): ChatRequest["context"] {
   };
 }
 
-/** Streams Claude's reply via /api/chat; throws with a readable message on failure. */
-async function streamChat(text: string, result: QueryResult, lang: "en" | "uz", onPartial: (t: string) => void): Promise<string> {
-  const history: ChatTurn[] = useJarvis
-    .getState()
-    .messages.filter((m) => m.text)
+/** Adds an item the server saved to the on-screen graph. */
+function mergeItem(node: KGNode, edges: KGEdge[]) {
+  const graph = getGraph();
+  if (!graph.hasNode(node.id)) addNodeToGraph(graph, node, edges[0]?.target);
+  for (const e of edges) addEdgeToGraph(graph, e);
+  refreshSizes(graph);
+  useJarvis.getState().bumpGraph();
+}
+
+/** Highlights what the AI is talking about. */
+function focusIds(ids: string[], path?: boolean) {
+  const graph = getGraph();
+  const list = ids.filter((id) => graph.hasNode(id));
+  if (!list.length) return;
+  applyResult({ intent: "topic", answer: "", nodes: list, anchors: [list[0]], path: path ? list : undefined });
+}
+
+/** Runs the AI via /api/chat (NDJSON events); throws with a readable message on failure. */
+async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t: string) => void): Promise<string> {
+  const s = useJarvis.getState();
+  const history: ChatTurn[] = s.messages
+    .filter((m) => m.text)
     .slice(-CHAT_LIMITS.messages)
     .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
   const body: ChatRequest = { messages: history, lang, context: buildContext(result) };
@@ -75,14 +94,41 @@ async function streamChat(text: string, result: QueryResult, lang: "en" | "uz", 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let out = "";
+  let buf = "";
+  const handle = (line: string) => {
+    if (!line.trim()) return;
+    let e: ChatEvent;
+    try {
+      e = JSON.parse(line) as ChatEvent;
+    } catch {
+      return;
+    }
+    if (e.t === "text") {
+      out += e.v;
+      onPartial(out.trim());
+    } else if (e.t === "tool") {
+      s.log("tool", e.summary);
+      s.setHud("executing", e.summary.slice(0, 40));
+    } else if (e.t === "created") {
+      mergeItem(e.node, e.edges);
+      s.log("memory", `Saved ${e.node.category} “${e.node.label}” (permanent)`);
+    } else if (e.t === "updated") {
+      const graph = getGraph();
+      if (graph.hasNode(e.node.id)) graph.setNodeAttribute(e.node.id, "node", e.node);
+      s.bumpGraph();
+    } else if (e.t === "focus") focusIds(e.ids, e.path);
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    out += decoder.decode(value, { stream: true });
-    onPartial(out);
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    lines.forEach(handle);
   }
+  handle(buf);
   out = out.trim();
-  if (!out) throw new Error("Claude returned an empty reply");
+  if (!out) throw new Error("The AI returned an empty reply");
   return out;
 }
 
@@ -133,35 +179,36 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     s.log("search", `Searched knowledge graph — intent: ${result.intent}`);
     if (result.nodes.length) s.log("result", `Found ${result.nodes.length} related node${result.nodes.length === 1 ? "" : "s"}`);
 
-    if (result.create) {
+    const aiMode = useJarvis.getState().status.mode === "ai";
+    // With an AI brain, the AI decides what to save (via tools); the local parser only saves in demo mode.
+    if (result.create && !aiMode) {
       s.setHud("executing", `Saving ${result.create.category}`);
-      await wait(280);
-      const node = createNode(result.create.category, result.create.label, result.create.content, result.create.links);
+      const node = await createNode(result.create.category, result.create.label, result.create.content, result.create.links);
       s.log("memory", `Created ${result.create.category} “${node.label}”${result.create.links.length ? ` linked to ${result.create.links.length} node(s)` : ""}`);
       result.nodes = [node.id, ...result.create.links];
       result.anchors = [node.id];
     }
 
-    applyResult(result);
+    if (!(aiMode && result.create)) applyResult(result);
 
     const lang = result.lang ?? detectLang(text);
     let answer = result.answer;
     let brain = "demo brain";
-    // Saving a memory/task/note is done locally (deterministic); Claude answers everything else.
-    if (useJarvis.getState().status.mode === "ai" && !result.create) {
-      s.setHud("thinking", "Asking Claude");
-      s.log("ai", "Asking Claude");
+    if (aiMode) {
+      const name = useJarvis.getState().status.model === "GEMINI" ? "Gemini" : "Claude";
+      s.setHud("thinking", `Asking ${name}`);
+      s.log("ai", `Asking ${name}`);
       const id = s.addMessage("jarvis", "");
       try {
-        answer = await streamChat(text, result, lang, (partial) => useJarvis.getState().updateMessage(id, partial));
-        brain = "Claude";
+        answer = await streamChat(result, lang, (partial) => useJarvis.getState().updateMessage(id, partial));
+        brain = name;
       } catch (err) {
         s.log("error", `${(err as Error).message} — answered from local knowledge`);
         answer = result.answer;
       }
       useJarvis.getState().updateMessage(id, answer);
     } else {
-      if (result.intent === "needs-ai") s.log("system", "Needs Claude: add ANTHROPIC_API_KEY to .env.local. Answered from local knowledge");
+      if (result.intent === "needs-ai") s.log("system", "Needs an AI key (Settings → Gemini or Claude). Answered from local knowledge");
       s.addMessage("jarvis", answer);
     }
     saveChat();
@@ -219,40 +266,46 @@ export function applyResult(r: QueryResult) {
   }
 }
 
-function slug(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+/** Saves a memory/task/note permanently on this computer (falls back to browser storage). */
+export async function createNode(category: ItemCategory, label: string, content: string, links: string[]): Promise<KGNode> {
+  try {
+    const res = await fetch("/api/items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, label, content, links }) });
+    if (!res.ok) throw new Error(String(res.status));
+    const { node, edges } = (await res.json()) as { node: KGNode; edges: KGEdge[] };
+    mergeItem(node, edges);
+    return node;
+  } catch {
+    const graph = getGraph();
+    const { node, edges } = buildItem({ category, label, content, links }, (id) => graph.hasNode(id), "JARVIS (browser)");
+    mergeItem(node, edges);
+    if (!persistLocal(node, edges)) useJarvis.getState().log("error", "Could not save (server and browser storage unavailable)");
+    else useJarvis.getState().log("error", "Server storage unavailable — saved in this browser only");
+    return node;
+  }
 }
 
-export function createNode(category: KGNode["category"], label: string, content: string, links: string[]): KGNode {
+/** Marks a task JARVIS saved as done (or open again). */
+export async function setTaskDone(id: string, done: boolean) {
+  const s = useJarvis.getState();
+  const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: done ? "done" : "open" }) });
+  if (!res.ok) return s.log("error", "Could not update the task");
+  const { node } = (await res.json()) as { node: KGNode };
   const graph = getGraph();
-  const now = new Date().toISOString();
-  const node: KGNode = {
-    id: `${category}-${slug(label)}-${Date.now().toString(36)}`,
-    label,
-    category,
-    description: content,
-    content,
-    importance: category === "memory" ? 0.45 : 0.4,
-    tags: [category, "created by jarvis"],
-    source: "JARVIS (local)",
-    updatedAt: now,
-    metadata: category === "task" ? { status: "open" } : undefined,
-  };
-  addNodeToGraph(graph, node, links[0]);
-  const relation = category === "task" ? "RELATED_TO" : "MENTIONS";
-  const edges: KGEdge[] = links.map((target) => ({
-    id: `${node.id}|${relation}|${target}`,
-    source: node.id,
-    target,
-    relation,
-    weight: 0.6,
-  }));
-  if (!links.length && graph.hasNode("izzatillo")) {
-    edges.push({ id: `${node.id}|RELATED_TO|izzatillo`, source: node.id, target: "izzatillo", relation: "RELATED_TO", weight: 0.4 });
-  }
-  for (const e of edges) addEdgeToGraph(graph, e);
+  if (graph.hasNode(id)) graph.setNodeAttribute(id, "node", node);
+  s.bumpGraph();
+  s.log("memory", `Task “${node.label}” ${done ? "done" : "reopened"}`);
+}
+
+/** Deletes an item JARVIS saved (the UI asks first). */
+export async function deleteItem(id: string) {
+  const s = useJarvis.getState();
+  const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) return s.log("error", "Could not delete this item");
+  const graph = getGraph();
+  const label = graph.hasNode(id) ? graph.getNodeAttribute(id, "label") : id;
+  if (graph.hasNode(id)) graph.dropNode(id);
   refreshSizes(graph);
-  if (!persistLocal(node, edges)) useJarvis.getState().log("error", "Could not persist locally (browser storage unavailable)");
-  useJarvis.getState().bumpGraph();
-  return node;
+  s.clearFocus();
+  s.bumpGraph();
+  s.log("memory", `Deleted “${label}”`);
 }

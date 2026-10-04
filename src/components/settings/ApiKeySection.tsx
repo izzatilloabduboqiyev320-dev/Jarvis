@@ -82,9 +82,8 @@ export default function ApiKeySection({ title, endpoint, placeholder, help, test
     <section className="md:col-span-2" data-testid={testId}>
       <PanelTitle>{title}</PanelTitle>
       <p className="max-w-2xl text-[13px] leading-relaxed text-ink-dim">
-        {help} Kalit faqat shu kompyuterdagi
-        <code className="mx-1 text-accent">.env.local</code>
-        faylga yoziladi va brauzerga qaytib yuborilmaydi. Uni hech kimga yubormang.
+        {help} Kalit faqat shu kompyuterda (<code className="text-accent">~/.jarvis</code> papkasida) saqlanadi, JARVIS yangilansa ham
+        o&apos;chmaydi va brauzerga qaytib yuborilmaydi. Uni hech kimga yubormang.
       </p>
       <div className="mt-3 font-mono text-[12px]">
         <span className="text-ink-faint">STATUS </span>

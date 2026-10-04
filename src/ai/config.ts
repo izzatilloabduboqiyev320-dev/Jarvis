@@ -1,4 +1,5 @@
 import "server-only";
+import { loadSavedKeys } from "@/server/home";
 
 /**
  * Server-side AI configuration, read from environment variables (.env.local).
@@ -6,6 +7,7 @@ import "server-only";
  * build, so API keys can never reach the browser.
  */
 export function getAIConfig() {
+  loadSavedKeys();
   const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY?.trim());
   // Claude is the brain when its key is set; Gemini answers when only its key is set.

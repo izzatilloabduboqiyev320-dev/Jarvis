@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
 import NavRail from "@/components/layout/NavRail";
-import { loadGraph } from "@/lib/graph-instance";
+import { loadGraph, migrateLocal } from "@/lib/graph-instance";
 import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { refreshStatus } from "@/lib/status";
 import { setNavigator } from "@/services/jarvis";
@@ -27,6 +27,8 @@ async function boot() {
     s.setReady(true);
     s.bumpGraph();
     s.log("system", `Knowledge graph loaded — ${graph.order} nodes, ${graph.size} links (${data.source ?? "demo"})`);
+    const moved = await migrateLocal();
+    if (moved) s.log("memory", `Moved ${moved} item(s) from this browser into permanent storage`);
   } catch (err) {
     s.log("error", `Could not load the knowledge graph: ${(err as Error).message}`);
     s.setHud("error", "Knowledge graph unavailable");

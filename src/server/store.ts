@@ -1,0 +1,119 @@
+import "server-only";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { JARVIS_HOME } from "@/server/home";
+import { buildDemoGraph } from "@/knowledge/demo-graph";
+import { buildItem, ITEM_CATEGORIES, type ItemSpec } from "@/knowledge/items";
+import type { KGData, KGEdge, KGNode } from "@/types/graph";
+
+/**
+ * JARVIS's permanent memory on this computer: everything the user or JARVIS
+ * creates (memories, tasks, notes) is saved to ~/.jarvis/jarvis-store.json,
+ * outside the project folder, so it survives restarts, browser changes and updates.
+ * A plain JSON file keeps installation dependency-free; the API is shaped so
+ * it can move to SQLite/Postgres later without touching callers.
+ */
+
+const DIR = JARVIS_HOME;
+const FILE = path.join(DIR, "jarvis-store.json");
+
+interface StoreFile {
+  version: 1;
+  nodes: KGNode[];
+  edges: KGEdge[];
+}
+
+let cache: StoreFile | null = null;
+let writing: Promise<void> = Promise.resolve();
+
+async function load(): Promise<StoreFile> {
+  if (cache) return cache;
+  try {
+    const parsed = JSON.parse(await readFile(FILE, "utf8")) as StoreFile;
+    cache = { version: 1, nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [], edges: Array.isArray(parsed.edges) ? parsed.edges : [] };
+  } catch {
+    cache = { version: 1, nodes: [], edges: [] };
+  }
+  return cache;
+}
+
+/** Writes are queued and atomic (temp file + rename), so a crash never leaves half a file. */
+function save(): Promise<void> {
+  writing = writing.then(async () => {
+    if (!cache) return;
+    await mkdir(DIR, { recursive: true });
+    const tmp = `${FILE}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(cache, null, 1), "utf8");
+    await rename(tmp, FILE);
+  });
+  return writing;
+}
+
+/** Demo knowledge + everything saved on this computer. */
+export async function getGraphData(): Promise<KGData> {
+  const demo = buildDemoGraph();
+  const store = await load();
+  const ids = new Set(demo.nodes.map((n) => n.id));
+  const nodes = [...demo.nodes, ...store.nodes.filter((n) => !ids.has(n.id))];
+  const all = new Set(nodes.map((n) => n.id));
+  const edges = [...demo.edges, ...store.edges.filter((e) => all.has(e.source) && all.has(e.target))];
+  return { nodes, edges };
+}
+
+export async function addItem(spec: ItemSpec): Promise<{ node: KGNode; edges: KGEdge[] }> {
+  if (!ITEM_CATEGORIES.includes(spec.category)) throw new Error("Unsupported item type");
+  const data = await getGraphData();
+  const ids = new Set(data.nodes.map((n) => n.id));
+  const item = buildItem(spec, (id) => ids.has(id));
+  const store = await load();
+  store.nodes.push(item.node);
+  store.edges.push(...item.edges);
+  await save();
+  return item;
+}
+
+/** Marks a saved task done/open. Only items JARVIS created can change. */
+export async function setTaskStatus(id: string, status: "open" | "done"): Promise<KGNode | null> {
+  const store = await load();
+  const node = store.nodes.find((n) => n.id === id && n.category === "task");
+  if (!node) return null;
+  node.metadata = { ...node.metadata, status };
+  node.updatedAt = new Date().toISOString();
+  await save();
+  return node;
+}
+
+export async function removeItem(id: string): Promise<boolean> {
+  const store = await load();
+  if (!store.nodes.some((n) => n.id === id)) return false;
+  store.nodes = store.nodes.filter((n) => n.id !== id);
+  store.edges = store.edges.filter((e) => e.source !== id && e.target !== id);
+  await save();
+  return true;
+}
+
+/** One-time move of items saved in the browser (Phase 1) into the permanent store. */
+export async function importItems(nodes: KGNode[], edges: KGEdge[]): Promise<number> {
+  const store = await load();
+  const have = new Set(store.nodes.map((n) => n.id));
+  const ok = nodes.filter(
+    (n) => n && typeof n.id === "string" && typeof n.label === "string" && ITEM_CATEGORIES.includes(n.category as never) && !have.has(n.id),
+  );
+  if (!ok.length) return 0;
+  const okIds = new Set(ok.map((n) => n.id));
+  store.nodes.push(
+    ...ok.map((n) => ({
+      ...n,
+      label: n.label.slice(0, 120),
+      content: typeof n.content === "string" ? n.content.slice(0, 4000) : undefined,
+      description: String(n.description ?? "").slice(0, 400),
+      tags: Array.isArray(n.tags) ? n.tags.map(String).slice(0, 12) : [],
+      importance: typeof n.importance === "number" ? Math.min(1, Math.max(0, n.importance)) : 0.4,
+      source: "JARVIS (browser)",
+      updatedAt: typeof n.updatedAt === "string" ? n.updatedAt : new Date().toISOString(),
+    })),
+  );
+  store.edges.push(...edges.filter((e) => e && okIds.has(e.source) && typeof e.target === "string"));
+  await save();
+  return ok.length;
+}
