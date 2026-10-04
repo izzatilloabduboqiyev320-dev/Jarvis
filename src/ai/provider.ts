@@ -7,6 +7,7 @@ import { retrieveContext } from "@/ai/context";
 import { GeminiError, runGeminiAgent } from "@/ai/gemini";
 import type { ChatEvent } from "@/ai/tools";
 import { logActivity, type ActivityKind } from "@/server/activity";
+import { noteAnalysis } from "@/server/health";
 import { appendTurns } from "@/server/conversations";
 
 /**
@@ -57,9 +58,11 @@ export async function runJarvis(req: ChatRequest, signal: AbortSignal, emit: (e:
     const used = await runAgent(provider, request, signal, relay);
     text = text.trim();
     act("ai", `${used === "claude" ? "Claude" : "Gemini"} reasoning complete, response generated`);
+    noteAnalysis(used === "claude" ? "Claude" : "Gemini", true);
     await appendTurns(channel, [{ role: "user", content: req.voice ? `🎙 ${question}` : question }, { role: "assistant", content: text }]);
     return { provider: used, text };
   } catch (err) {
+    if (!signal.aborted) noteAnalysis(name, false);
     if (signal.aborted) act("system", "Request cancelled");
     else act("error", explainAIError(err));
     // A failed request is saved only if JARVIS had started answering; an unanswered question would otherwise merge into the next one.

@@ -16,9 +16,13 @@ export function jsonFile<T>(name: string, empty: () => T, check: (raw: unknown) 
     file,
     async load(): Promise<T> {
       if (S.data) return S.data;
+      const text = await readFile(file, "utf8").catch(() => null);
       try {
-        S.data = check(JSON.parse(await readFile(file, "utf8"))) ?? empty();
+        S.data = text === null ? empty() : (check(JSON.parse(text)) ?? empty());
       } catch {
+        // Unreadable file: keep a copy so the next save does not overwrite the user's data.
+        await rename(file, `${file}.corrupt-${Date.now()}`).catch(() => {});
+        console.error(`[ERROR] DATABASE ${name} was unreadable; kept a copy next to it and started fresh`);
         S.data = empty();
       }
       return S.data;

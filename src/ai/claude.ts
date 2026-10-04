@@ -19,8 +19,8 @@ export function resetClaudeClient() {
   client = null;
 }
 
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() });
+export function getClient(): Anthropic {
+  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim(), timeout: 120_000, maxRetries: 3 });
   return client;
 }
 

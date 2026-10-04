@@ -1,4 +1,5 @@
 import "server-only";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomInt } from "node:crypto";
 import path from "node:path";
@@ -10,6 +11,7 @@ import type { ChatTurn } from "@/ai/types";
 import type { ChatEvent } from "@/ai/tools";
 import { detectLang } from "@/knowledge/uzbek";
 import { decide } from "@/server/approvals";
+import { healthText, setHealth } from "@/server/health";
 import { JARVIS_HOME } from "@/server/home";
 import { shared } from "@/server/shared";
 import { listBots, TOKEN_PATTERN } from "@/server/telegram";
@@ -28,6 +30,8 @@ import { describeAlert, onAlert } from "@/server/market";
  */
 
 const FILE = path.join(JARVIS_HOME, "telegram-assistant.json");
+/** Only one JARVIS process on this computer may poll the bot (two pollers make Telegram answer 409 Conflict). */
+const LOCK = path.join(JARVIS_HOME, "telegram-poller.lock");
 const PAIR_TTL_MS = 15 * 60_000;
 const MAX_VOICE_SECONDS = 180;
 const MAX_TURNS = 20;
@@ -50,6 +54,8 @@ const S = shared("tg-assistant", () => ({
   status: "",
   approvalMsgs: new Map<string, { messageId: number; summary: string }>(),
   alertHooked: false,
+  /** Settles once start-up has adopted TELEGRAM_BOT_TOKEN (or found there is none). */
+  ready: Promise.resolve() as Promise<void>,
 }));
 
 // Fired price alerts go to the paired Telegram chat.
@@ -116,6 +122,58 @@ async function save() {
 
 function newPairCode() {
   S.pair = { code: String(randomInt(100000, 1000000)), expires: Date.now() + PAIR_TTL_MS };
+  if (S.cfg) console.info(`[TELEGRAM] Not paired yet. Send this code to @${S.cfg.username} in Telegram within 15 min: ${S.pair.code}`);
+}
+
+/**
+ * TELEGRAM_BOT_TOKEN in .env / .env.local: used when no bot was set up in
+ * Settings, so the bot also works without opening the app.
+ */
+async function adoptEnvToken() {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const c = await load();
+  if (!token) return;
+  if (c) {
+    if (c.token !== token) console.info(`[TELEGRAM] TELEGRAM_BOT_TOKEN differs from the bot saved in Settings (@${c.username}); using the saved bot`);
+    return;
+  }
+  try {
+    const me = await verifyToken(token);
+    S.cfg = { token, botId: me.id, username: String(me.username ?? me.id) };
+    await save();
+    console.info(`[TELEGRAM] Using TELEGRAM_BOT_TOKEN: @${S.cfg.username}`);
+  } catch (err) {
+    const e = err as TgError;
+    setHealth("telegram", false, `TELEGRAM_BOT_TOKEN: ${e.message}`);
+    // Telegram unreachable: the worker restarts and tries again; a rejected token is reported once.
+    if (e.code === 0 || e.code === 429 || e.code >= 500) throw e;
+  }
+}
+
+/** True when another live JARVIS process on this computer already polls the bot. */
+function otherPoller(): number | null {
+  try {
+    const pid = Number(readFileSync(LOCK, "utf8").trim());
+    if (pid && pid !== process.pid) {
+      process.kill(pid, 0); // throws when that process no longer exists
+      return pid;
+    }
+  } catch {
+    /* no lock, or a stale one */
+  }
+  try {
+    writeFileSync(LOCK, String(process.pid), { mode: 0o600 });
+    process.once("exit", () => {
+      try {
+        if (readFileSync(LOCK, "utf8").trim() === String(process.pid)) rmSync(LOCK);
+      } catch {
+        /* already gone */
+      }
+    });
+  } catch {
+    /* JARVIS_HOME not writable: the database check reports it */
+  }
+  return null;
 }
 
 export interface AssistantInfo {
@@ -134,8 +192,7 @@ export async function assistantInfo(): Promise<AssistantInfo> {
   return { configured: true, username: c.username, paired: Boolean(c.ownerChatId), ownerName: c.ownerName, pairCode: c.ownerChatId ? undefined : S.pair!.code, status: S.status || undefined };
 }
 
-/** Verifies and saves the dedicated JARVIS bot, then starts listening. */
-export async function setAssistant(token: string): Promise<AssistantInfo> {
+async function verifyToken(token: string) {
   if (!TOKEN_PATTERN.test(token)) throw new TgError("Bu bot tokeniga o'xshamaydi (123456789:ABC… ko'rinishida bo'ladi).", 400);
   const me = await api<{ id: number; is_bot: boolean; username?: string }>("getMe", {}, 15_000, token).catch((e: TgError) => {
     throw e.code === 401 || e.code === 404 ? new TgError("Token noto'g'ri yoki bekor qilingan", 400) : e;
@@ -143,6 +200,12 @@ export async function setAssistant(token: string): Promise<AssistantInfo> {
   const hook = await api<{ url: string }>("getWebhookInfo", {}, 15_000, token);
   if (hook.url) throw new TgError("Bu bot boshqa dastur uchun ishlayapti (webhook bor). JARVIS uchun BotFather'da yangi bot oching.", 400);
   if ((await listBots()).some((b) => b.id === me.id)) throw new TgError("Bu bot kuzatiladigan botlar ro'yxatida. JARVIS uchun alohida yangi bot oching.", 400);
+  return me;
+}
+
+/** Verifies and saves the dedicated JARVIS bot, then starts listening. */
+export async function setAssistant(token: string): Promise<AssistantInfo> {
+  const me = await verifyToken(token);
   S.gen++;
   S.cfg = { token, botId: me.id, username: String(me.username ?? me.id) };
   await newConversation("telegram");
@@ -178,16 +241,56 @@ export async function unpairAssistant() {
 export function startAssistant() {
   if (S.running) return;
   S.running = true;
-  const gen = S.gen;
+  let markReady = () => {};
+  S.ready = new Promise<void>((r) => (markReady = r));
   void (async () => {
+    let gen = S.gen;
+    let crashed = false;
     try {
+      await mkdir(JARVIS_HOME, { recursive: true, mode: 0o700 }).catch(() => {});
+      await adoptEnvToken();
+      gen = S.gen;
+      const c = await load();
+      markReady();
+      if (!c) {
+        setHealth("telegram", null, "bot ulanmagan (TELEGRAM_BOT_TOKEN yoki Settings → JARVIS Telegram'da)", "none");
+        return;
+      }
+      const other = otherPoller();
+      if (other) {
+        S.status = `Bu kompyuterda boshqa JARVIS (pid ${other}) allaqachon ishlayapti`;
+        setHealth("telegram", false, `another JARVIS process (pid ${other}) is already polling @${c.username}; stop it or this one stays offline`);
+        return;
+      }
+      if (!c.ownerChatId && (!S.pair || S.pair.expires < Date.now())) newPairCode();
       await poll(gen);
+    } catch (err) {
+      crashed = true;
+      console.error("[ERROR] TELEGRAM polling worker crashed:", err instanceof Error ? err.message : err);
     } finally {
+      markReady();
       S.running = false;
-      // A newer setup may be waiting for the old loop to finish.
+      // A newer setup may be waiting for the old loop to finish; a crashed loop restarts after a pause.
       if (S.gen !== gen && S.cfg) startAssistant();
+      else if (crashed) {
+        console.info("[RECOVERY] TELEGRAM restarting the polling worker in 10 s");
+        setTimeout(startAssistant, 10_000).unref?.();
+      }
     }
   })();
+}
+
+/** Bot state for the start-up report (one getMe call, no polling). */
+export async function checkAssistant(): Promise<{ configured: boolean; ok: boolean; detail: string }> {
+  await Promise.race([S.ready, new Promise((r) => setTimeout(r, 20_000).unref?.())]);
+  const c = await load();
+  if (!c) return { configured: false, ok: false, detail: "set TELEGRAM_BOT_TOKEN in .env.local or use Settings → JARVIS Telegram'da" };
+  try {
+    await api("getMe", {}, 15_000, c.token);
+    return { configured: true, ok: true, detail: `@${c.username}${c.ownerChatId ? `, paired with ${c.ownerName ?? "owner"}` : ", NOT PAIRED (send the code printed above)"}` };
+  } catch (err) {
+    return { configured: true, ok: false, detail: `@${c.username}: ${(err as Error).message}` };
+  }
 }
 
 interface Update {
@@ -206,19 +309,32 @@ interface Message {
 
 async function poll(gen: number) {
   if (!(await load())) return;
+  let failures = 0;
   while (S.gen === gen && S.cfg) {
     let updates: Update[];
     try {
       updates = await api<Update[]>("getUpdates", { offset: S.offset, timeout: 25, allowed_updates: ["message", "callback_query"] }, 40_000);
+      if (!Array.isArray(updates)) updates = [];
       S.status = "";
+      failures = 0;
+      setHealth("telegram", true, `connected @${S.cfg?.username}, polling`);
     } catch (err) {
       const e = err as TgError;
       if (e.code === 401 || e.code === 404) {
         S.status = "Token bekor qilingan. Yangi token qo'ying.";
+        setHealth("telegram", false, "token rejected by Telegram (401): create/paste a valid token");
         return;
       }
-      S.status = e.code === 409 ? "Bu bot boshqa joyda ham ishlatilyapti" : "Telegram bilan aloqa yo'q, qayta urinyapman";
-      await sleep(e.code === 409 ? 30_000 : 5_000);
+      failures++;
+      if (e.code === 409) {
+        S.status = "Bu bot boshqa joyda ham ishlatilyapti";
+        setHealth("telegram", false, "409 Conflict: another program (another computer, an old script or a second JARVIS) is polling this same bot token. Stop it; retrying every 30 s");
+      } else {
+        S.status = "Telegram bilan aloqa yo'q, qayta urinyapman";
+        setHealth("telegram", false, `cannot reach Telegram (${e.message}); retrying`);
+      }
+      // 5 s, 10 s, 20 s … up to 60 s between attempts; 409 waits 30 s.
+      await sleep(e.code === 409 ? 30_000 : Math.min(60_000, 5_000 * 2 ** Math.min(failures - 1, 4)));
       continue;
     }
     for (const u of updates) {
@@ -229,8 +345,24 @@ async function poll(gen: number) {
   }
 }
 
-const send = (chatId: number, text: string, extra: Record<string, unknown> = {}) =>
-  api<{ message_id: number }>("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), ...extra });
+/** sendMessage, retried on network errors, 429 and 5xx (1 s, then 4 s). */
+async function send(chatId: number, text: string, extra: Record<string, unknown> = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await api<{ message_id: number }>("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), ...extra });
+      console.info("[TELEGRAM] Message sent");
+      return r;
+    } catch (err) {
+      const e = err as TgError;
+      const retry = e.code === 0 || e.code === 429 || e.code >= 500;
+      if (!retry || attempt >= 2) {
+        console.error(`[ERROR] TELEGRAM sendMessage failed: ${e.message}`);
+        throw e;
+      }
+      await sleep(attempt ? 4_000 : 1_000);
+    }
+  }
+}
 
 async function onMessage(m: Message) {
   const c = S.cfg;
@@ -246,6 +378,7 @@ async function onMessage(m: Message) {
       console.info("[jarvis telegram-bot] paired with owner");
       await send(m.chat.id, "Ulandik! ✅ Endi menga yozing yoki ovozli xabar yuboring. Men JARVIS'man.");
     } else {
+      if (!S.pair || S.pair.expires < Date.now()) newPairCode();
       await send(m.chat.id, "Bu shaxsiy JARVIS boti. Ulash uchun JARVIS → Settings → \"JARVIS Telegram'da\" bo'limidagi 6 xonali kodni yuboring.");
     }
     return;
@@ -256,6 +389,10 @@ async function onMessage(m: Message) {
   }
   if (m.text?.trim() === "/start") {
     await send(m.chat.id, "Salom! Men JARVIS. Yozing yoki ovozli xabar yuboring: vazifa qo'shaman, eslab qolaman, kompyuteringizda ilova va saytlarni ochaman (ruxsatingiz bilan).");
+    return;
+  }
+  if (m.text?.trim().split("@")[0] === "/health") {
+    await send(m.chat.id, healthText());
     return;
   }
   if (S.busy) {
