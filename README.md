@@ -36,6 +36,8 @@ The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never s
 
 For a faster production build: `npm run build && npm start`.
 
+**Leaving it running on the Mac** (start-up report, Telegram pairing from the terminal, `/health`, keeping the Mac awake with `caffeinate -i npm run dev`, how to stop): see `docs/RUN-ON-MAC.md`.
+
 ## What works now (Phase 1)
 
 | Area | Status |

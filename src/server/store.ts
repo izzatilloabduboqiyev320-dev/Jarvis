@@ -30,10 +30,14 @@ const S = shared("store", () => ({ cache: null as StoreFile | null, writing: Pro
 
 async function load(): Promise<StoreFile> {
   if (S.cache) return S.cache;
+  const text = await readFile(FILE, "utf8").catch(() => null);
   try {
-    const parsed = JSON.parse(await readFile(FILE, "utf8")) as StoreFile;
+    const parsed = (text === null ? {} : JSON.parse(text)) as Partial<StoreFile>;
     S.cache = { version: 1, nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [], edges: Array.isArray(parsed.edges) ? parsed.edges : [] };
   } catch {
+    // Unreadable file: keep a copy so the next save does not overwrite the saved memories.
+    await rename(FILE, `${FILE}.corrupt-${Date.now()}`).catch(() => {});
+    console.error("[ERROR] DATABASE jarvis-store.json was unreadable; kept a copy next to it and started fresh");
     S.cache = { version: 1, nodes: [], edges: [] };
   }
   return S.cache;
@@ -41,14 +45,16 @@ async function load(): Promise<StoreFile> {
 
 /** Writes are queued and atomic (temp file + rename), so a crash never leaves half a file. */
 function save(): Promise<void> {
-  S.writing = S.writing.then(async () => {
+  const run = S.writing.then(async () => {
     if (!S.cache) return;
     await mkdir(DIR, { recursive: true });
     const tmp = `${FILE}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(S.cache, null, 1), "utf8");
     await rename(tmp, FILE);
   });
-  return S.writing;
+  // A failed write must not block every later write; the caller still sees the error.
+  S.writing = run.catch((err) => console.error("[ERROR] DATABASE could not save jarvis-store.json:", err instanceof Error ? err.message : err));
+  return run;
 }
 
 /** Demo knowledge + everything saved on this computer + connected Telegram bots. */

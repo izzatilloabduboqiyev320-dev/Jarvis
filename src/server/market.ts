@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { JARVIS_HOME } from "@/server/home";
+import { noteMarketUpdate, setHealth } from "@/server/health";
 import { shared } from "@/server/shared";
 
 /**
@@ -15,6 +16,8 @@ import { shared } from "@/server/shared";
 const FILE = path.join(JARVIS_HOME, "alerts.json");
 const CHECK_EVERY_MS = 60_000;
 const MAX_ALERTS = 30;
+/** A price older than this is reported as stale (market closed or feed stuck). */
+const STALE_AFTER_MS = 30 * 60_000;
 
 const binance = () => (process.env.JARVIS_BINANCE_URL?.trim() || "https://api.binance.com").replace(/\/+$/, "");
 const yahoo = () => (process.env.JARVIS_YAHOO_URL?.trim() || "https://query1.finance.yahoo.com").replace(/\/+$/, "");
@@ -29,7 +32,12 @@ export interface Quote {
   low?: number;
   currency?: string;
   source: "Binance" | "Yahoo Finance";
+  /** When JARVIS fetched it. */
   at: string;
+  /** Time of the last trade/candle according to the exchange. */
+  marketTime?: string;
+  /** True when marketTime is older than 30 minutes (market closed or stale feed). */
+  stale?: boolean;
 }
 
 export interface Alert {
@@ -72,12 +80,14 @@ export async function getQuote(raw: string): Promise<Quote> {
   const r = route(raw);
   const at = new Date().toISOString();
   if (r.source === "binance") {
-    const j = await getJson<{ lastPrice: string; priceChangePercent: string; highPrice: string; lowPrice: string }>(
+    const j = await getJson<{ lastPrice: string; priceChangePercent: string; highPrice: string; lowPrice: string; closeTime?: number }>(
       `${binance()}/api/v3/ticker/24hr?symbol=${encodeURIComponent(r.symbol)}`,
     );
-    return { symbol: r.symbol, price: Number(j.lastPrice), changePct: Number(j.priceChangePercent), high: Number(j.highPrice), low: Number(j.lowPrice), source: "Binance", at };
+    const price = Number(j.lastPrice);
+    if (!(price > 0)) throw new Error("market data unavailable (no price)");
+    return { symbol: r.symbol, price, changePct: Number(j.priceChangePercent), high: Number(j.highPrice), low: Number(j.lowPrice), source: "Binance", at, ...freshness(j.closeTime) };
   }
-  const j = await getJson<{ chart?: { result?: { meta: { regularMarketPrice: number; chartPreviousClose?: number; currency?: string; regularMarketDayHigh?: number; regularMarketDayLow?: number } }[] } }>(
+  const j = await getJson<{ chart?: { result?: { meta: { regularMarketPrice: number; regularMarketTime?: number; chartPreviousClose?: number; currency?: string; regularMarketDayHigh?: number; regularMarketDayLow?: number } }[] } }>(
     `${yahoo()}/v8/finance/chart/${encodeURIComponent(r.symbol)}?range=1d&interval=15m`,
   );
   const meta = j.chart?.result?.[0]?.meta;
@@ -92,7 +102,13 @@ export async function getQuote(raw: string): Promise<Quote> {
     currency: meta.currency,
     source: "Yahoo Finance",
     at,
+    ...freshness(meta.regularMarketTime ? meta.regularMarketTime * 1000 : undefined),
   };
+}
+
+function freshness(ms?: number): { marketTime?: string; stale?: boolean } {
+  if (!ms || !Number.isFinite(ms)) return {};
+  return { marketTime: new Date(ms).toISOString(), stale: Date.now() - ms > STALE_AFTER_MS };
 }
 
 /** TradingView chart link for a symbol ("BINANCE:BTCUSDT", "OANDA:XAUUSD", "AAPL"). */
@@ -107,23 +123,29 @@ export function chartUrl(symbol: string, interval?: string): string {
 async function load(): Promise<Alert[]> {
   if (S.alerts) return S.alerts;
   try {
-    const j = JSON.parse(await readFile(FILE, "utf8")) as { alerts?: Alert[] };
+    const text = await readFile(FILE, "utf8").catch(() => null);
+    const j = text === null ? {} : (JSON.parse(text) as { alerts?: Alert[] });
     S.alerts = Array.isArray(j.alerts) ? j.alerts : [];
   } catch {
+    // Unreadable file: keep a copy instead of overwriting the user's alerts on the next save.
+    await rename(FILE, `${FILE}.corrupt-${Date.now()}`).catch(() => {});
+    console.error("[ERROR] MARKET alerts.json was unreadable; kept a copy next to it and started with no alerts");
     S.alerts = [];
   }
   return S.alerts;
 }
 
 function save(): Promise<void> {
-  S.writing = S.writing.then(async () => {
+  const run = S.writing.then(async () => {
     await mkdir(JARVIS_HOME, { recursive: true, mode: 0o700 });
     const tmp = `${FILE}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify({ alerts: S.alerts ?? [] }, null, 1), { encoding: "utf8", mode: 0o600 });
     await chmod(tmp, 0o600);
     await rename(tmp, FILE);
   });
-  return S.writing;
+  // A failed write must not block every later write; the caller still sees the error.
+  S.writing = run.catch((err) => console.error("[ERROR] MARKET could not save alerts:", err instanceof Error ? err.message : err));
+  return run;
 }
 
 export async function listAlerts(includeTriggered = false): Promise<Alert[]> {
@@ -174,7 +196,11 @@ async function checkAlerts() {
     let q: Quote;
     try {
       q = await getQuote(symbol);
-    } catch {
+      noteMarketUpdate(q.symbol, q.price, q.marketTime);
+      setHealth("market", true, q.stale ? `${symbol} narxi eski (${q.marketTime}), bozor yopiq bo'lishi mumkin` : `${symbol} yangilandi`, "quiet");
+      console.info(`[MARKET] ${symbol} ${q.price}${q.stale ? " (MARKET DATA STALE)" : ""}`);
+    } catch (err) {
+      setHealth("market", false, `${symbol}: MARKET DATA OFFLINE (${err instanceof Error ? err.message : err})`);
       continue;
     }
     for (const a of list) {
@@ -203,15 +229,24 @@ async function checkAlerts() {
 }
 
 /** Checks active alerts every minute while any exist. */
+export const alertIntervalMs = () => Number(process.env.JARVIS_ALERT_INTERVAL_MS) || CHECK_EVERY_MS;
+
 export function startAlertWatcher() {
   if (S.running) return;
   S.running = true;
   void (async () => {
     try {
-      while ((await listAlerts()).length) {
-        await checkAlerts().catch((err) => console.error("[jarvis alert]", err instanceof Error ? err.message : err));
-        await new Promise((r) => setTimeout(r, Number(process.env.JARVIS_ALERT_INTERVAL_MS) || CHECK_EVERY_MS));
+      let n: number;
+      while ((n = (await listAlerts()).length)) {
+        setHealth("monitor", true, `ishlayapti, ${n} ta faol ogohlantirish`);
+        await checkAlerts().catch((err) => console.error("[ERROR] MONITOR", err instanceof Error ? err.message : err));
+        await new Promise((r) => setTimeout(r, alertIntervalMs()));
       }
+      setHealth("monitor", null, "faol ogohlantirish yo'q (kutish rejimi)");
+    } catch (err) {
+      console.error("[ERROR] MONITOR stopped:", err instanceof Error ? err.message : err);
+      console.info("[RECOVERY] MONITOR restarting in 60 s");
+      setTimeout(startAlertWatcher, 60_000).unref?.();
     } finally {
       S.running = false;
     }
