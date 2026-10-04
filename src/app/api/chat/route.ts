@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { runClaudeAgent } from "@/ai/claude";
-import { GeminiError, runGeminiAgent } from "@/ai/gemini";
+import { runAgent } from "@/ai/agent";
+import { GeminiError } from "@/ai/gemini";
 import type { ChatEvent } from "@/ai/tools";
 import { isLocalRequest } from "@/ai/key-store";
 import { getAIConfig } from "@/ai/config";
@@ -94,8 +94,7 @@ export async function POST(request: Request) {
     queue.push(e);
     wake?.();
   };
-  const run = provider === "claude" ? runClaudeAgent : runGeminiAgent;
-  void run(req, request.signal, emit)
+  void runAgent(provider, req, request.signal, emit)
     .catch((err) => {
       failure = err;
     })

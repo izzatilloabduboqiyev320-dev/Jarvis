@@ -2,9 +2,9 @@ import "server-only";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomInt } from "node:crypto";
 import path from "node:path";
-import { runClaudeAgent } from "@/ai/claude";
+import { explainAIError, runAgent } from "@/ai/agent";
 import { getAIConfig } from "@/ai/config";
-import { runGeminiAgent, transcribe } from "@/ai/gemini";
+import { transcribe } from "@/ai/gemini";
 import type { ChatTurn } from "@/ai/chat-types";
 import type { ChatEvent } from "@/ai/tools";
 import { detectLang } from "@/knowledge/uzbek";
@@ -328,12 +328,11 @@ async function answer(m: Message) {
         }).catch(() => {});
     } else if (e.t === "tool") console.info(`[jarvis telegram-bot] ${e.summary}`);
   };
-  const run = provider === "claude" ? runClaudeAgent : runGeminiAgent;
   try {
-    await run({ messages: [...S.history], lang: detectLang(text), channel: "telegram", context: { nodes: [] } }, AbortSignal.timeout(5 * 60_000), emit);
+    await runAgent(provider, { messages: [...S.history], lang: detectLang(text), channel: "telegram", context: { nodes: [] } }, AbortSignal.timeout(5 * 60_000), emit);
   } catch (err) {
     console.error("[jarvis telegram-bot] AI error", err instanceof Error ? err.message : err);
-    if (!out.trim()) out = "Kechirasiz, hozir AI javob bera olmadi. Birozdan keyin qayta urinib ko'ring.";
+    if (!out.trim()) out = `Kechirasiz, javob bera olmadim. Sababi: ${explainAIError(err)}.`;
   }
   out = out.trim() || "…";
   S.history.push({ role: "assistant", content: out.slice(0, 4000) });
