@@ -37,7 +37,7 @@ export const VOICE_REPLIES_KEY = "jarvis.voice-replies.v1";
 export interface AppStatus {
   mode: "demo" | "ai";
   model: string;
-  voiceOutput: "browser" | "elevenlabs";
+  voiceOutput: "browser" | "gemini" | "elevenlabs";
 }
 
 interface JarvisStore {

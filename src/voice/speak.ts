@@ -65,6 +65,39 @@ export async function speak(text: string, lang: "en" | "uz" = "en"): Promise<str
   return voice ? `${voice.name} (${voice.lang})` : "default voice";
 }
 
+let currentAudio: HTMLAudioElement | null = null;
+
+/**
+ * Speaks with Gemini's natural voice via /api/tts (the key stays on the server).
+ * Resolves with the voice name when audio played, or null when it could not (caller falls back).
+ */
+export async function speakGemini(text: string): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  stopSpeaking();
+  try {
+    const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 1500) }) });
+    if (!res.ok) return null;
+    const url = URL.createObjectURL(await res.blob());
+    const audio = new Audio(url);
+    currentAudio = audio;
+    await new Promise<void>((resolve) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => resolve();
+      audio.onpause = () => resolve();
+      audio.play().catch(() => resolve());
+    });
+    URL.revokeObjectURL(url);
+    if (currentAudio === audio) currentAudio = null;
+    return "Gemini";
+  } catch {
+    return null;
+  }
+}
+
 export function stopSpeaking() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
   if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
 }

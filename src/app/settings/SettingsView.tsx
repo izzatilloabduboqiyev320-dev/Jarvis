@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { PageFrame } from "@/components/layout/SectionPage";
-import ClaudeKeySection from "@/components/settings/ClaudeKeySection";
+import ApiKeySection from "@/components/settings/ApiKeySection";
 import { PanelTitle } from "@/components/layout/ui";
 import { clearLocal } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
@@ -32,7 +32,7 @@ export default function SettingsView() {
             <dt className="text-ink-faint">MODEL</dt>
             <dd className="text-ink-dim">{status.model}</dd>
             <dt className="text-ink-faint">VOICE OUTPUT</dt>
-            <dd className="text-ink-dim">{status.voiceOutput === "elevenlabs" ? "ElevenLabs (Phase 5)" : "Browser voice"}</dd>
+            <dd className="text-ink-dim">{status.voiceOutput === "gemini" ? "Gemini (natural Uzbek voice)" : status.voiceOutput === "elevenlabs" ? "ElevenLabs" : "Browser voice"}</dd>
             <dt className="text-ink-faint">SPEECH INPUT</dt>
             <dd className="text-ink-dim">{sttSupported ? "Browser push-to-talk" : "Not supported in this browser"}</dd>
             <dt className="text-ink-faint">STORAGE</dt>
@@ -78,7 +78,25 @@ export default function SettingsView() {
           </button>
         </section>
 
-        <ClaudeKeySection />
+        <ApiKeySection
+          title="Gemini API key (natural voice)"
+          endpoint="/api/settings/gemini-key"
+          placeholder="AIza..."
+          testId="gemini-key-section"
+          help={
+            <>
+              JARVIS haqiqiy o&apos;zbekcha ovozda gapirishi uchun: aistudio.google.com saytiga kiring, <b>Get API key</b> → <b>Create API key</b> ni bosing,
+              kalitni shu yerga joylang va <b>Saqlash</b> ni bosing. Claude kaliti bo&apos;lmasa, Gemini javob ham beradi.
+            </>
+          }
+        />
+        <ApiKeySection
+          title="Claude API key"
+          endpoint="/api/settings/claude-key"
+          placeholder="sk-ant-..."
+          testId="claude-key-section"
+          help={<>Kalitni console.anthropic.com → API Keys dan nusxalab, shu yerga joylang va <b>Saqlash</b> ni bosing.</>}
+        />
       </div>
     </PageFrame>
   );

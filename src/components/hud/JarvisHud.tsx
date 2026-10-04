@@ -38,29 +38,43 @@ export default function JarvisHud() {
     [],
   );
 
-  const toggleMic = () => {
+  // Conversation mode: listen → answer aloud → listen again, until switched off.
+  const [talkMode, setTalkMode] = useState(false);
+  const talkRef = useRef(false);
+  const missesRef = useRef(0);
+
+  const endTalk = () => {
+    talkRef.current = false;
+    setTalkMode(false);
+    stopRef.current?.();
+    stopRef.current = null;
+  };
+
+  const listen = () => {
     const s = useJarvis.getState();
-    if (stopRef.current) {
-      stopRef.current();
-      stopRef.current = null;
-      return;
-    }
     stopSpeaking();
     const lang = s.voiceLang;
-    s.setHud("listening", "Push-to-talk");
+    let heard = false;
+    s.setHud("listening", talkRef.current ? "Conversation" : "Push-to-talk");
     s.log("system", `Microphone on — listening (${lang === "uz-UZ" ? "O'zbekcha" : "English"})`);
     setInterim("");
     stopRef.current = startPushToTalk({
       onInterim: setInterim,
       onFinal: (text) => {
+        heard = true;
+        missesRef.current = 0;
         s.log("system", "Speech recognised");
         setInterim("");
         s.setHud("thinking");
-        void askJarvis(text, { lang: lang === "uz-UZ" ? "uz" : "en" });
+        void askJarvis(text, { lang: lang === "uz-UZ" ? "uz" : "en" }).then(() => {
+          if (talkRef.current) listen();
+        });
       },
       onError: (msg) => {
         s.log("error", msg);
         s.setHud("error", msg);
+        // A permission or device problem won't fix itself: leave conversation mode.
+        if (!/eshitmadim|didn't hear/i.test(msg)) endTalk();
         setTimeout(() => {
           if (useJarvis.getState().hud === "error") useJarvis.getState().setHud("idle");
         }, 4000);
@@ -69,8 +83,37 @@ export default function JarvisHud() {
         stopRef.current = null;
         setInterim("");
         if (useJarvis.getState().hud === "listening") useJarvis.getState().setHud("idle");
+        if (!heard && talkRef.current) {
+          // Silence: keep listening a couple of times, then rest.
+          if (++missesRef.current >= 3) {
+            endTalk();
+            useJarvis.getState().log("system", "Conversation paused after silence");
+          } else setTimeout(() => talkRef.current && !stopRef.current && listen(), 400);
+        }
       },
     }, lang);
+  };
+
+  const toggleMic = () => {
+    if (stopRef.current) {
+      endTalk();
+      return;
+    }
+    listen();
+  };
+
+  const toggleTalk = () => {
+    if (talkRef.current) {
+      endTalk();
+      stopSpeaking();
+      if (useJarvis.getState().hud === "listening") useJarvis.getState().setHud("idle");
+      return;
+    }
+    talkRef.current = true;
+    missesRef.current = 0;
+    setTalkMode(true);
+    if (!useJarvis.getState().voiceReplies) useJarvis.getState().setVoiceReplies(true);
+    if (!stopRef.current) listen();
   };
 
   const hint =
@@ -184,6 +227,17 @@ export default function JarvisHud() {
         </button>
         </div>
       </div>
+      <button
+        onClick={toggleTalk}
+        className={`mt-2 flex h-8 w-full items-center justify-center gap-2 border font-mono text-[10px] uppercase tracking-[0.2em] transition ${
+          talkMode ? "border-accent bg-accent/10 text-accent" : "border-line text-ink-dim hover:border-accent/60 hover:text-accent"
+        }`}
+        title={uz ? "Gapiring, JARVIS ovoz bilan javob beradi va yana tinglaydi" : "Speak; JARVIS answers aloud and listens again"}
+        data-testid="talk-mode"
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${talkMode ? "animate-pulse bg-accent" : "bg-ink-faint"}`} />
+        {talkMode ? (uz ? "Suhbatni tugatish" : "End conversation") : uz ? "Ovozli suhbat" : "Voice conversation"}
+      </button>
     </div>
   );
 }

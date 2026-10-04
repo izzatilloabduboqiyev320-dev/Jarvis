@@ -3,19 +3,18 @@ import { chmod, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Saves the Claude API key into .env.local (the project's private settings file)
- * and activates it in the running server, so the user never edits files by hand.
- * The key itself is never returned to the browser; only a masked hint is.
+ * Saves API keys into .env.local (the project's private settings file) and
+ * activates them in the running server, so the user never edits files by hand.
+ * Keys are never returned to the browser; only a masked hint is.
  */
 
 const ENV_FILE = path.join(process.cwd(), ".env.local");
-const VAR = "ANTHROPIC_API_KEY";
 
-export const KEY_PATTERN = /^sk-ant-[A-Za-z0-9_-]{20,300}$/;
+export type KeyName = "ANTHROPIC_API_KEY" | "GEMINI_API_KEY";
 
-export function keyHint(): string | null {
-  const key = process.env[VAR]?.trim();
-  return key ? `sk-ant-…${key.slice(-4)}` : null;
+export function keyHint(name: KeyName): string | null {
+  const key = process.env[name]?.trim();
+  return key ? `${key.slice(0, name === "ANTHROPIC_API_KEY" ? 7 : 4)}…${key.slice(-4)}` : null;
 }
 
 async function readEnvFile(): Promise<string[]> {
@@ -26,15 +25,15 @@ async function readEnvFile(): Promise<string[]> {
   }
 }
 
-/** Writes (or with null, removes) the key line, keeping every other line as it was. */
-export async function saveKey(key: string | null): Promise<void> {
-  const lines = (await readEnvFile()).filter((l) => !new RegExp(`^\\s*(export\\s+)?${VAR}\\s*=`).test(l));
+/** Writes (or with null, removes) one key line, keeping every other line as it was. */
+export async function saveKey(name: KeyName, key: string | null): Promise<void> {
+  const lines = (await readEnvFile()).filter((l) => !new RegExp(`^\\s*(export\\s+)?${name}\\s*=`).test(l));
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-  if (key) lines.unshift(`${VAR}=${key}`);
+  if (key) lines.unshift(`${name}=${key}`);
   await writeFile(ENV_FILE, lines.join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
   await chmod(ENV_FILE, 0o600).catch(() => {});
-  if (key) process.env[VAR] = key;
-  else delete process.env[VAR];
+  if (key) process.env[name] = key;
+  else delete process.env[name];
 }
 
 /** True when the request comes from this computer (the app is a local, single-user tool). */

@@ -1,11 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { streamClaude } from "@/ai/claude";
+import { GeminiError, streamGemini } from "@/ai/gemini";
+import { isLocalRequest } from "@/ai/key-store";
 import { getAIConfig } from "@/ai/config";
 import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
 
 /**
- * POST /api/chat — streams JARVIS's reply from Claude as plain text.
- * 503 when no ANTHROPIC_API_KEY is set (the client then uses the local brain).
+ * POST /api/chat — streams JARVIS's reply (Claude, or Gemini when only its key is set) as plain text.
+ * 503 when no AI key is set (the client then uses the local brain).
  */
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -58,8 +60,10 @@ let windowStart = 0;
 let count = 0;
 
 export async function POST(request: Request) {
-  if (!getAIConfig().hasAnthropicKey) {
-    return Response.json({ error: "no_key", message: "ANTHROPIC_API_KEY is not set" }, { status: 503 });
+  if (!isLocalRequest(request)) return Response.json({ error: "forbidden", message: "Local use only" }, { status: 403 });
+  const provider = getAIConfig().chatProvider;
+  if (!provider) {
+    return Response.json({ error: "no_key", message: "No AI key is set" }, { status: 503 });
   }
 
   const now = Date.now();
@@ -79,20 +83,20 @@ export async function POST(request: Request) {
   }
   if (!req) return Response.json({ error: "bad_request", message: "Invalid chat request" }, { status: 400 });
 
-  const iterator = streamClaude(req, request.signal);
+  const iterator = provider === "claude" ? streamClaude(req, request.signal) : streamGemini(req, request.signal);
   // Pull the first chunk before responding so auth/model errors become a proper status code.
   let first: IteratorResult<string>;
   try {
     first = await iterator.next();
   } catch (err) {
-    const status = err instanceof Anthropic.APIError && err.status ? err.status : 502;
+    const status = err instanceof Anthropic.APIError && err.status ? err.status : err instanceof GeminiError ? (err.status === 403 || err.status === 400 ? 401 : err.status) : 502;
     const message =
       status === 401
-        ? "The Claude API key is invalid"
+        ? `The ${provider === "claude" ? "Claude" : "Gemini"} API key is invalid`
         : status === 404
-          ? "The configured Claude model was not found (check JARVIS_MODEL)"
+          ? `The configured model was not found (check ${provider === "claude" ? "JARVIS_MODEL" : "GEMINI_MODEL"})`
           : status === 429
-            ? "Claude rate limit reached"
+            ? "AI rate limit reached"
             : "JARVIS AI service unavailable";
     console.error("[api/chat]", err instanceof Error ? err.message : err);
     return Response.json({ error: "upstream", message }, { status: status === 401 ? 401 : 502 });

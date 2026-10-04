@@ -7,8 +7,8 @@ import { getAIConfig } from "@/ai/config";
 export function GET() {
   const ai = getAIConfig();
   return Response.json({
-    mode: ai.hasAnthropicKey ? "ai" : "demo",
+    mode: ai.chatProvider ? "ai" : "demo",
     model: ai.modelLabel,
-    voiceOutput: ai.hasElevenLabsKey ? "elevenlabs" : "browser",
+    voiceOutput: ai.hasGeminiKey ? "gemini" : "browser",
   });
 }

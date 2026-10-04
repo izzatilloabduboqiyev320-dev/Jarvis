@@ -19,7 +19,7 @@ function getClient(): Anthropic {
   return client;
 }
 
-function systemPrompt(req: ChatRequest): string {
+export function systemPrompt(req: ChatRequest): string {
   const { nodes, selected, localAction } = req.context;
   const knowledge = nodes.length
     ? nodes

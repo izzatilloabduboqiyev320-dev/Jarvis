@@ -7,7 +7,7 @@ import { runQuery, type QueryResult } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph, persistLocal } from "@/lib/graph-instance";
 import { CHAT_KEY, useJarvis } from "@/lib/store";
-import { speak } from "@/voice/speak";
+import { speak, speakGemini } from "@/voice/speak";
 import type { KGEdge, KGNode } from "@/types/graph";
 
 /**
@@ -96,13 +96,23 @@ export function setNavigator(fn: (path: string) => void) {
   navigate = fn;
 }
 
+/** Natural Gemini voice when its key is set, otherwise the browser's voice. */
+async function say(text: string, lang: "en" | "uz"): Promise<string | null> {
+  if (useJarvis.getState().status.voiceOutput === "gemini") {
+    const v = await speakGemini(text);
+    if (v) return v;
+    useJarvis.getState().log("error", "Gemini voice unavailable — using the browser voice");
+  }
+  return speak(text, lang);
+}
+
 /** Says a short test phrase so the user can check that sound works. */
 export async function testVoice() {
   const s = useJarvis.getState();
   const uz = s.voiceLang === "uz-UZ";
   if (!s.voiceReplies) s.setVoiceReplies(true);
   s.setHud("speaking", uz ? "Ovoz sinovi" : "Voice test");
-  const voice = await speak(uz ? "Salom! Men JARVIS. Ovozim eshitilyaptimi?" : "Hello. I am JARVIS. Can you hear me?", uz ? "uz" : "en");
+  const voice = await say(uz ? "Salom! Men JARVIS. Ovozim eshitilyaptimi?" : "Hello. I am JARVIS. Can you hear me?", uz ? "uz" : "en");
   s.log("system", voice ? `Voice test — voice: ${voice}` : "This browser has no speech output");
   if (useJarvis.getState().hud === "speaking") useJarvis.getState().setHud("idle");
 }
@@ -159,7 +169,7 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     s.log("ai", `JARVIS responded (${brain})`);
     s.setHud("speaking", "Responding");
     if (useJarvis.getState().voiceReplies) {
-      const voice = await speak(answer, lang);
+      const voice = await say(answer, lang);
       s.log("system", voice ? `Spoke reply — voice: ${voice}` : "This browser has no speech output; reply shown as text");
     } else await wait(Math.min(2400, 700 + answer.length * 12));
     return result;

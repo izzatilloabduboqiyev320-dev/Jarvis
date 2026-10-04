@@ -16,6 +16,14 @@ npm run dev        # then open http://localhost:3000
 
 No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local brain that searches the knowledge graph.
 
+### Talk to JARVIS by voice (natural Uzbek)
+
+1. Get a Gemini key at https://aistudio.google.com → Get API key → Create API key.
+2. In JARVIS open **Settings → Gemini API key**, paste it, press **Saqlash**.
+3. On the graph page press **Ovozli suhbat** (under the HUD), allow the microphone in Chrome, and talk. JARVIS answers aloud with Gemini's voice and listens again; press the button again to stop.
+
+With only a Gemini key, Gemini also writes the answers; with a Claude key too, Claude answers and Gemini speaks.
+
 ### Chat with Claude
 
 1. Create a key at https://console.anthropic.com → API Keys (billing must be set up there).
