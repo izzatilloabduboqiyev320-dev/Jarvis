@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { PageFrame } from "@/components/layout/SectionPage";
 import ApiKeySection from "@/components/settings/ApiKeySection";
 import TelegramSection from "@/components/settings/TelegramSection";
+import UpdateButton from "@/components/layout/UpdateButton";
 import { PanelTitle } from "@/components/layout/ui";
 import { useJarvis } from "@/lib/store";
 import { testVoice } from "@/services/jarvis";
@@ -87,6 +88,10 @@ export default function SettingsView() {
           help={<>Kalitni console.anthropic.com → API Keys dan nusxalab, shu yerga joylang va <b>Saqlash</b> ni bosing.</>}
         />
         <TelegramSection />
+        <div className="md:col-span-2">
+          <PanelTitle>Yangilash</PanelTitle>
+          <UpdateButton />
+        </div>
       </div>
     </PageFrame>
   );

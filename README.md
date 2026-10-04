@@ -32,6 +32,8 @@ With only a Gemini key, Gemini also writes the answers; with a Claude key too, C
 
 The key is read only on the server (`src/ai/claude.ts`, `/api/chat`) and never sent to the browser. `~/.jarvis` is outside the project folder, so updating or reinstalling JARVIS keeps your keys. Optional: `JARVIS_MODEL` picks another Claude model.
 
+**Updating:** when a new version is on GitHub, a **Yangilash** button appears at the top of JARVIS (also in Settings). One click downloads it, keeps your keys, data and settings, installs it and restarts. Start JARVIS with `npm run dev` (it runs `scripts/run.mjs`, which performs the restart).
+
 For a faster production build: `npm run build && npm start`.
 
 ## What works now (Phase 1)

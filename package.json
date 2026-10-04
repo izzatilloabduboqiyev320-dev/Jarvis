@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/run.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check:query": "tsx scripts/query-check.ts",
-    "check": "npm run lint && npm run typecheck && npm run check:query && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run check:query && npm run build",
+    "dev:next": "next dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -35,5 +36,6 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
-  }
+  },
+  "jarvisUpdateRepo": ""
 }

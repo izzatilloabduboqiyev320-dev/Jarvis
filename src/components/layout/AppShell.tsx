@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
 import NavRail from "@/components/layout/NavRail";
+import UpdateButton from "@/components/layout/UpdateButton";
 import { loadGraph, migrateLocal } from "@/lib/graph-instance";
 import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { refreshStatus } from "@/lib/status";
@@ -79,6 +80,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <NavRail />
       <main className="relative min-w-0 flex-1">{children}</main>
       <CommandPalette />
+      <UpdateButton banner />
       <ItemViewer />
     </div>
   );
