@@ -6,6 +6,7 @@ import { botGraph, botNodeId, checkBots } from "@/server/telegram";
 import type { KGEdge, KGNode } from "@/types/graph";
 import { requestApproval, type ApprovalEvent } from "@/server/approvals";
 import { describe, parseAction, perform } from "@/server/computer";
+import { cancelAlert, chartUrl, createAlert, describeAlert, getQuote, listAlerts } from "@/server/market";
 
 /**
  * Tools JARVIS's AI brain can call while answering. Each runs here on the
@@ -105,6 +106,34 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: "take_screenshot",
     description: "Take a screenshot of their screen and save it to the Desktop. They are asked to approve first.",
     parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "get_price",
+    description:
+      "Live market price (read-only). Crypto pairs as on Binance (BTCUSDT, ETHUSDT); stocks/indices/forex/commodities as on Yahoo Finance (AAPL, ^GSPC, EURUSD=X, GC=F for gold, CL=F for oil). TradingView-style names like OANDA:XAUUSD or SPX also work.",
+    parameters: { type: "object", properties: { symbol: str }, required: ["symbol"] },
+  },
+  {
+    name: "open_chart",
+    description:
+      "Open a TradingView chart on the Mac, e.g. symbol BINANCE:BTCUSDT, OANDA:XAUUSD, NASDAQ:AAPL, FX:EURUSD; optional interval 1,5,15,60,240,D,W. They are asked to approve first.",
+    parameters: { type: "object", properties: { symbol: str, interval: str }, required: ["symbol"] },
+  },
+  {
+    name: "create_price_alert",
+    description:
+      "Watch a price and notify Izzatillo (in JARVIS and in Telegram if connected) when it goes above and/or below a level, e.g. 'BTC 70000 dan oshsa ayt'. Checked every minute while JARVIS runs. Never trades.",
+    parameters: { type: "object", properties: { symbol: str, above: { type: "number" }, below: { type: "number" }, note: str }, required: ["symbol"] },
+  },
+  {
+    name: "list_price_alerts",
+    description: "List active price alerts (and recently triggered ones).",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "cancel_price_alert",
+    description: "Cancel a price alert by id (from list_price_alerts).",
+    parameters: { type: "object", properties: { id: str }, required: ["id"] },
   },
   {
     name: "complete_task",
@@ -250,6 +279,36 @@ export async function runTool(name: string, input: Record<string, unknown>, emit
       const result = await perform(action);
       emit({ t: "tool", name, summary: `Done: ${summary}` });
       return { done: true, result };
+    }
+    case "get_price": {
+      const q = await getQuote(s("symbol"));
+      emit({ t: "tool", name, summary: `Price ${q.symbol}: ${q.price}${q.changePct !== undefined ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct}%)` : ""} — ${q.source}` });
+      return q;
+    }
+    case "open_chart": {
+      const action = parseAction("open_website", { url: chartUrl(s("symbol"), s("interval") || undefined) });
+      const summary = `TradingView'da ${s("symbol").toUpperCase()} grafigini ochish`;
+      emit({ t: "tool", name, summary: `Asking permission: ${summary}` });
+      if (!(await requestApproval(summary, emit, signal))) return { done: false, reason: "Izzatillo did not approve this. Do not retry; say so briefly." };
+      await perform(action);
+      emit({ t: "tool", name, summary: `Done: ${summary}` });
+      return { done: true };
+    }
+    case "create_price_alert": {
+      const num = (k: string) => (input[k] === undefined || input[k] === null || input[k] === "" ? undefined : Number(input[k]));
+      const { alert, quote } = await createAlert({ symbol: s("symbol"), above: num("above"), below: num("below"), note: s("note") || undefined });
+      emit({ t: "tool", name, summary: `Alert set: ${describeAlert(alert)} (now ${quote.price})` });
+      return { created: true, id: alert.id, now: quote.price };
+    }
+    case "list_price_alerts": {
+      const all = await listAlerts(true);
+      emit({ t: "tool", name, summary: `Listed ${all.filter((a) => !a.triggeredAt).length} active alert(s)` });
+      return all.slice(-20);
+    }
+    case "cancel_price_alert": {
+      if (!(await cancelAlert(s("id")))) throw new Error("No alert with that id");
+      emit({ t: "tool", name, summary: `Cancelled alert ${s("id")}` });
+      return { cancelled: true };
     }
     case "complete_task": {
       const node = await setTaskStatus(s("id"), "done");

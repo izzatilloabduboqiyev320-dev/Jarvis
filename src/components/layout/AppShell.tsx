@@ -9,7 +9,7 @@ import UpdateButton from "@/components/layout/UpdateButton";
 import { loadGraph, migrateLocal } from "@/lib/graph-instance";
 import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { refreshStatus } from "@/lib/status";
-import { setNavigator, syncNodes } from "@/services/jarvis";
+import { checkFiredAlerts, setNavigator, syncNodes } from "@/services/jarvis";
 import type { KGData, KGEdge, KGNode } from "@/types/graph";
 
 let booted = false;
@@ -48,6 +48,8 @@ async function boot() {
   }
   await refreshStatus();
   void checkBots();
+  void checkFiredAlerts();
+  setInterval(() => void checkFiredAlerts(), 30_000);
 }
 
 /** Connected Telegram bots get a fresh health check at start-up (read-only Telegram calls). */

@@ -380,3 +380,38 @@ export async function deleteItem(id: string) {
   s.bumpGraph();
   s.log("memory", `Deleted “${label}”`);
 }
+
+const ALERTS_SEEN_KEY = "jarvis.alerts-seen.v1";
+
+/** Announces price alerts that fired since the last check (chat, activity, voice). */
+export async function checkFiredAlerts() {
+  let seen = "";
+  try {
+    seen = localStorage.getItem(ALERTS_SEEN_KEY) ?? "";
+    // First run on this browser: start from now, don't replay old alerts.
+    if (!seen) localStorage.setItem(ALERTS_SEEN_KEY, (seen = new Date().toISOString()));
+  } catch {
+    seen ||= new Date(Date.now() - 60_000).toISOString();
+  }
+  const j = (await fetch("/api/alerts", { cache: "no-store" })
+    .then((r) => r.json())
+    .catch(() => null)) as { alerts?: { triggeredAt?: string; triggeredPrice?: number; text: string }[] } | null;
+  const fired = (j?.alerts ?? []).filter((a) => a.triggeredAt && a.triggeredAt > seen);
+  if (!fired.length) return;
+  try {
+    localStorage.setItem(ALERTS_SEEN_KEY, fired.map((a) => a.triggeredAt!).sort().pop()!);
+  } catch {
+    /* ignore */
+  }
+  const s = useJarvis.getState();
+  for (const a of fired) {
+    const text = `🔔 Narx ogohlantirishi: ${a.text}. Hozirgi narx: ${a.triggeredPrice}`;
+    s.log("system", text);
+    s.addMessage("jarvis", text);
+  }
+  saveChat();
+  if (s.voiceReplies && !busy) {
+    const uz = s.voiceLang === "uz-UZ";
+    await say(fired.map((a) => `${uz ? "Diqqat! " : "Alert: "}${a.text.replace(/≥/g, uz ? "dan yuqori" : "above").replace(/≤/g, uz ? "dan past" : "below")}`).join(". "), uz ? "uz" : "en");
+  }
+}

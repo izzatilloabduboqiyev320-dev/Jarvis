@@ -12,6 +12,7 @@ import { decide } from "@/server/approvals";
 import { JARVIS_HOME } from "@/server/home";
 import { shared } from "@/server/shared";
 import { listBots, TOKEN_PATTERN } from "@/server/telegram";
+import { describeAlert, onAlert } from "@/server/market";
 
 /**
  * Talk to JARVIS from Telegram: a dedicated bot that only its owner can use.
@@ -48,7 +49,18 @@ const S = shared("tg-assistant", () => ({
   busy: false,
   status: "",
   approvalMsgs: new Map<string, { messageId: number; summary: string }>(),
+  alertHooked: false,
 }));
+
+// Fired price alerts go to the paired Telegram chat.
+if (!S.alertHooked) {
+  S.alertHooked = true;
+  onAlert((a) => {
+    const c = S.cfg;
+    if (c?.ownerChatId) void send(c.ownerChatId, `🔔 Narx ogohlantirishi: ${describeAlert(a)}
+Hozirgi narx: ${a.triggeredPrice}`).catch(() => {});
+  });
+}
 
 const base = () => (process.env.TELEGRAM_BASE_URL?.trim() || "https://api.telegram.org").replace(/\/+$/, "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
