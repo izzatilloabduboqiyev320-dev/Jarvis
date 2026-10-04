@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { PageFrame } from "@/components/layout/SectionPage";
 import ApiKeySection from "@/components/settings/ApiKeySection";
+import AssistantSection from "@/components/settings/AssistantSection";
 import TelegramSection from "@/components/settings/TelegramSection";
 import UpdateButton from "@/components/layout/UpdateButton";
 import { PanelTitle } from "@/components/layout/ui";
@@ -87,6 +88,7 @@ export default function SettingsView() {
           testId="claude-key-section"
           help={<>Kalitni console.anthropic.com → API Keys dan nusxalab, shu yerga joylang va <b>Saqlash</b> ni bosing.</>}
         />
+        <AssistantSection />
         <TelegramSection />
         <div className="md:col-span-2">
           <PanelTitle>Yangilash</PanelTitle>

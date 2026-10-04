@@ -49,6 +49,7 @@ ${knowledge}
 ${selected ? `\nThe item currently selected on screen: ${selected}` : ""}
 ${localAction ? `\nAlready done by the system for ttheir message: ${localAction}` : ""}
 
+${req.channel === "telegram" ? "\nIzzatillo is writing to you from Telegram on the phone: the graph is not on screen (skip show_on_graph), plain short text only, and approvals for computer actions are asked in Telegram with Ha / Yo'q buttons.\n" : ""}
 How to answer:
 - ${req.lang === "uz" ? "The user is writing in Uzbek. Answer in natural Uzbek (Latin script)." : "Answer in the language the user writes in."}
 - Be concise and direct, like a capable assistant speaking: usually 1–4 sentences, plain text, no markdown headings or tables. Your reply may be read aloud.

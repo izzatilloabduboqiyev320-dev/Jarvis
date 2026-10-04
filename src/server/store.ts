@@ -6,6 +6,7 @@ import { buildDemoGraph } from "@/knowledge/demo-graph";
 import { botGraph, listBots } from "@/server/telegram";
 import { buildItem, ITEM_CATEGORIES, type ItemSpec } from "@/knowledge/items";
 import type { KGData, KGEdge, KGNode } from "@/types/graph";
+import { shared } from "@/server/shared";
 
 /**
  * JARVIS's permanent memory on this computer: everything the user or JARVIS
@@ -24,30 +25,30 @@ interface StoreFile {
   edges: KGEdge[];
 }
 
-let cache: StoreFile | null = null;
-let writing: Promise<void> = Promise.resolve();
+
+const S = shared("store", () => ({ cache: null as StoreFile | null, writing: Promise.resolve() as Promise<void> }));
 
 async function load(): Promise<StoreFile> {
-  if (cache) return cache;
+  if (S.cache) return S.cache;
   try {
     const parsed = JSON.parse(await readFile(FILE, "utf8")) as StoreFile;
-    cache = { version: 1, nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [], edges: Array.isArray(parsed.edges) ? parsed.edges : [] };
+    S.cache = { version: 1, nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [], edges: Array.isArray(parsed.edges) ? parsed.edges : [] };
   } catch {
-    cache = { version: 1, nodes: [], edges: [] };
+    S.cache = { version: 1, nodes: [], edges: [] };
   }
-  return cache;
+  return S.cache;
 }
 
 /** Writes are queued and atomic (temp file + rename), so a crash never leaves half a file. */
 function save(): Promise<void> {
-  writing = writing.then(async () => {
-    if (!cache) return;
+  S.writing = S.writing.then(async () => {
+    if (!S.cache) return;
     await mkdir(DIR, { recursive: true });
     const tmp = `${FILE}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(cache, null, 1), "utf8");
+    await writeFile(tmp, JSON.stringify(S.cache, null, 1), "utf8");
     await rename(tmp, FILE);
   });
-  return writing;
+  return S.writing;
 }
 
 /** Demo knowledge + everything saved on this computer + connected Telegram bots. */

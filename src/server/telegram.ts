@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { JARVIS_HOME } from "@/server/home";
 import type { KGEdge, KGNode } from "@/types/graph";
+import { shared } from "@/server/shared";
 
 /**
  * Izzatillo's own Telegram bots, connected so JARVIS can show them on the graph
@@ -50,32 +51,31 @@ export interface PublicBot {
   status: BotStatus | null;
 }
 
-let cache: StoredBot[] | null = null;
-const statuses = new Map<number, BotStatus>();
-let writing: Promise<void> = Promise.resolve();
+
+const S = shared("telegram", () => ({ cache: null as StoredBot[] | null, statuses: new Map<number, BotStatus>(), writing: Promise.resolve() as Promise<void> }));
 
 const base = () => (process.env.TELEGRAM_BASE_URL?.trim() || "https://api.telegram.org").replace(/\/+$/, "");
 
 async function load(): Promise<StoredBot[]> {
-  if (cache) return cache;
+  if (S.cache) return S.cache;
   try {
     const parsed = JSON.parse(await readFile(FILE, "utf8")) as { bots?: StoredBot[] };
-    cache = Array.isArray(parsed.bots) ? parsed.bots.filter((b) => b && TOKEN_PATTERN.test(b.token)) : [];
+    S.cache = Array.isArray(parsed.bots) ? parsed.bots.filter((b) => b && TOKEN_PATTERN.test(b.token)) : [];
   } catch {
-    cache = [];
+    S.cache = [];
   }
-  return cache;
+  return S.cache;
 }
 
 function save(): Promise<void> {
-  writing = writing.then(async () => {
+  S.writing = S.writing.then(async () => {
     await mkdir(JARVIS_HOME, { recursive: true, mode: 0o700 });
     const tmp = `${FILE}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify({ bots: cache ?? [] }, null, 1), { encoding: "utf8", mode: 0o600 });
+    await writeFile(tmp, JSON.stringify({ bots: S.cache ?? [] }, null, 1), { encoding: "utf8", mode: 0o600 });
     await chmod(tmp, 0o600);
     await rename(tmp, FILE);
   });
-  return writing;
+  return S.writing;
 }
 
 const hint = (token: string) => `${token.split(":")[0]}:…${token.slice(-4)}`;
@@ -104,7 +104,7 @@ async function call<T>(token: string, method: "getMe" | "getWebhookInfo"): Promi
 }
 
 function publicBot(b: StoredBot): PublicBot {
-  return { id: b.id, username: b.username, name: b.name, tokenHint: hint(b.token), addedAt: b.addedAt, status: statuses.get(b.id) ?? null };
+  return { id: b.id, username: b.username, name: b.name, tokenHint: hint(b.token), addedAt: b.addedAt, status: S.statuses.get(b.id) ?? null };
 }
 
 export async function listBots(): Promise<PublicBot[]> {
@@ -136,8 +136,8 @@ export async function addBot(token: string): Promise<PublicBot> {
 export async function removeBot(id: number): Promise<boolean> {
   const bots = await load();
   if (!bots.some((b) => b.id === id)) return false;
-  cache = bots.filter((b) => b.id !== id);
-  statuses.delete(id);
+  S.cache = bots.filter((b) => b.id !== id);
+  S.statuses.delete(id);
   await save();
   return true;
 }
@@ -181,7 +181,7 @@ async function checkBot(b: StoredBot): Promise<BotStatus> {
     const e = err as TelegramError;
     status = { health: e.kind === "invalid" ? "error" : "unknown", summary: e.message, checkedAt };
   }
-  statuses.set(b.id, status);
+  S.statuses.set(b.id, status);
   return status;
 }
 

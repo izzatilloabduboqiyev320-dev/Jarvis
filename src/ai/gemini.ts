@@ -170,3 +170,30 @@ export async function runGeminiAgent(req: ChatRequest, signal: AbortSignal, emit
     contents.push({ role: "user", parts: responses });
   }
 }
+
+/** Speech-to-text for Telegram voice messages (OGG/Opus), Uzbek or English. */
+export async function transcribe(audio: Buffer, mime: string, signal?: AbortSignal): Promise<string> {
+  const { geminiModel } = getAIConfig();
+  const res = await post(
+    `/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+    {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mime, data: audio.toString("base64") } },
+            { text: "Transcribe this voice message exactly as spoken (usually Uzbek in Latin script, sometimes English or Russian). Reply with the transcript only." },
+          ],
+        },
+      ],
+      generationConfig: { maxOutputTokens: 1024 },
+    },
+    signal,
+  );
+  const json = (await res.json()) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
+  return (json.candidates?.[0]?.content?.parts ?? [])
+    .filter((p) => p.text && !p.thought)
+    .map((p) => p.text)
+    .join("")
+    .trim();
+}

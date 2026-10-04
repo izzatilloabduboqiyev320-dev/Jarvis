@@ -16,6 +16,8 @@ export interface ContextNode {
 export interface ChatRequest {
   messages: ChatTurn[];
   lang: "en" | "uz";
+  /** Where the message came from; Telegram has no graph on screen. */
+  channel?: "app" | "telegram";
   context: {
     nodes: ContextNode[];
     selected?: string;
