@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { JARVIS_HOME } from "@/server/home";
 import { buildDemoGraph } from "@/knowledge/demo-graph";
+import { botGraph, listBots } from "@/server/telegram";
 import { buildItem, ITEM_CATEGORIES, type ItemSpec } from "@/knowledge/items";
 import type { KGData, KGEdge, KGNode } from "@/types/graph";
 
@@ -49,14 +50,16 @@ function save(): Promise<void> {
   return writing;
 }
 
-/** Demo knowledge + everything saved on this computer. */
+/** Demo knowledge + everything saved on this computer + connected Telegram bots. */
 export async function getGraphData(): Promise<KGData> {
   const demo = buildDemoGraph();
   const store = await load();
   const ids = new Set(demo.nodes.map((n) => n.id));
   const nodes = [...demo.nodes, ...store.nodes.filter((n) => !ids.has(n.id))];
+  const bots = botGraph(await listBots(), (id) => ids.has(id));
+  nodes.push(...bots.nodes);
   const all = new Set(nodes.map((n) => n.id));
-  const edges = [...demo.edges, ...store.edges.filter((e) => all.has(e.source) && all.has(e.target))];
+  const edges = [...demo.edges, ...store.edges.filter((e) => all.has(e.source) && all.has(e.target)), ...bots.edges];
   return { nodes, edges };
 }
 

@@ -48,6 +48,7 @@ For a faster production build: `npm run build && npm start`.
 | Command palette | `⌘K` / `Ctrl+K` or click the HUD: Ask Jarvis, Search Memory, Search Files, Add Note, Create Task, Import File, navigation, voice replies |
 | Memory (permanent) | Memories, tasks and notes are saved in `~/.jarvis/jarvis-store.json` on this computer and survive reloads, restarts and updates. Saved items can be marked done or deleted from the Inspector |
 | AI actions | With a Claude or Gemini key, JARVIS uses tools: searches the graph, opens items, traces connections, highlights results, lists tasks, saves memories/tasks/notes and marks tasks done ("…ni eslab qol", "vazifa qo'sh: …", "vazifalarim qanday?"). Tools run on the server, are logged, and cannot delete anything or reach outside this computer |
+| Telegram bots | Settings → **Telegram botlar**: paste a bot token from @BotFather. The bot appears on the graph and JARVIS checks it at start-up and when asked ("botlarim ishlayaptimi?"). Read-only: only `getMe` and `getWebhookInfo` are called (never `getUpdates`, never sends). Tokens stay in `~/.jarvis/telegram.json` (owner-only) and never reach the browser |
 | JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
 | Chat | chat window on the graph page and /chat; streams Claude replies when `ANTHROPIC_API_KEY` is set, otherwise the local brain answers; history kept in the browser |
 | Activity stream | every step JARVIS takes, timestamped |
@@ -74,6 +75,7 @@ npm run check   # lint + typecheck + query-engine smoke test + production build
 | `src/components/hud/JarvisHud.tsx` + `src/app/globals.css` | the HUD and the design system |
 | `src/app/api/graph`, `src/app/api/status` | server routes (graph data; AI status, never exposes keys) |
 | `src/ai/tools.ts` | the tools the AI can use, and the events they send to the screen |
+| `src/server/telegram.ts` | connected Telegram bots: token storage, health checks, graph items |
 | `src/server/store.ts` | permanent storage for memories, tasks and notes (`~/.jarvis`, set `JARVIS_HOME` to move it) |
 
 See `docs/ARCHITECTURE.md` for how it fits together and the roadmap.

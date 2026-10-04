@@ -2,6 +2,7 @@ import "server-only";
 import { createGraph, describePath, findPath, type KnowledgeGraph } from "@/knowledge/graph";
 import type { ItemCategory } from "@/knowledge/items";
 import { addItem, getGraphData, setTaskStatus } from "@/server/store";
+import { botGraph, botNodeId, checkBots } from "@/server/telegram";
 import type { KGEdge, KGNode } from "@/types/graph";
 
 /**
@@ -10,14 +11,15 @@ import type { KGEdge, KGNode } from "@/types/graph";
  * as an event (so the graph updates live and the activity stream stays honest).
  *
  * Safety: tools can read, create and mark tasks done. Nothing deletes or
- * changes existing knowledge, nothing reaches outside this computer.
+ * changes existing knowledge. The only outside call is check_bots, which asks
+ * Telegram read-only questions about Izzatillo's own bots (sends nothing).
  */
 
 export type ChatEvent =
   | { t: "text"; v: string }
   | { t: "tool"; name: string; summary: string }
   | { t: "created"; node: KGNode; edges: KGEdge[] }
-  | { t: "updated"; node: KGNode }
+  | { t: "updated"; node: KGNode; edges?: KGEdge[] }
   | { t: "focus"; ids: string[]; path?: boolean };
 
 export interface ToolSpec {
@@ -71,6 +73,12 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: "add_note",
     description: "Save a note (an idea, plan or piece of information he dictates). Link it to related item ids.",
     parameters: { type: "object", properties: { title: str, text: str, links: ids }, required: ["title", "text"] },
+  },
+  {
+    name: "check_bots",
+    description:
+      "Check Izzatillo's connected Telegram bots right now: whether each token works, whether it is receiving messages (webhook errors, messages waiting unanswered). Use when he asks about his bots / botlarim ishlayaptimi.",
+    parameters: { type: "object", properties: {} },
   },
   {
     name: "complete_task",
@@ -194,6 +202,16 @@ export async function runTool(name: string, input: Record<string, unknown>, emit
       emit({ t: "focus", ids: [item.node.id, ...item.edges.map((e) => e.target)] });
       emit({ t: "tool", name, summary: `Saved ${category} “${item.node.label}”` });
       return { saved: true, id: item.node.id };
+    }
+    case "check_bots": {
+      const bots = await checkBots();
+      if (!bots.length) return { bots: [], note: "No Telegram bots are connected yet. He can add one in Settings → Telegram botlar." };
+      const g = botGraph(bots, (id) => graph.hasNode(id));
+      for (const node of g.nodes) emit({ t: "updated", node, edges: g.edges.filter((e) => e.source === node.id || e.target === node.id) });
+      emit({ t: "focus", ids: bots.map(botNodeId) });
+      const bad = bots.filter((b) => b.status && b.status.health !== "ok").length;
+      emit({ t: "tool", name, summary: `Checked ${bots.length} Telegram bot(s)${bad ? ` — ${bad} need attention` : " — all fine"}` });
+      return bots.map((b) => ({ id: botNodeId(b), username: `@${b.username}`, name: b.name, ...b.status }));
     }
     case "complete_task": {
       const node = await setTaskStatus(s("id"), "done");

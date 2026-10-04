@@ -70,6 +70,24 @@ function mergeItem(node: KGNode, edges: KGEdge[]) {
   useJarvis.getState().bumpGraph();
 }
 
+/** Adds or refreshes server items (e.g. Telegram bots) on the on-screen graph; `drop` removes ids no longer present. */
+export function syncNodes(nodes: KGNode[], edges: KGEdge[], drop: string[] = []) {
+  const graph = getGraph();
+  for (const id of drop) if (graph.hasNode(id)) graph.dropNode(id);
+  for (const n of nodes) {
+    if (graph.hasNode(n.id)) {
+      graph.setNodeAttribute(n.id, "node", n);
+      graph.setNodeAttribute(n.id, "label", n.label);
+    } else {
+      const link = edges.find((e) => e.source === n.id || e.target === n.id);
+      addNodeToGraph(graph, n, link && (link.source === n.id ? link.target : link.source));
+    }
+  }
+  for (const e of edges) if (graph.hasNode(e.source) && graph.hasNode(e.target)) addEdgeToGraph(graph, e);
+  refreshSizes(graph);
+  useJarvis.getState().bumpGraph();
+}
+
 /** Highlights what the AI is talking about. */
 function focusIds(ids: string[], path?: boolean) {
   const graph = getGraph();
@@ -112,11 +130,7 @@ async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t:
     } else if (e.t === "created") {
       mergeItem(e.node, e.edges);
       s.log("memory", `Saved ${e.node.category} “${e.node.label}” (permanent)`);
-    } else if (e.t === "updated") {
-      const graph = getGraph();
-      if (graph.hasNode(e.node.id)) graph.setNodeAttribute(e.node.id, "node", e.node);
-      s.bumpGraph();
-    } else if (e.t === "focus") focusIds(e.ids, e.path);
+    } else if (e.t === "updated") syncNodes([e.node], e.edges ?? []); else if (e.t === "focus") focusIds(e.ids, e.path);
   };
   for (;;) {
     const { done, value } = await reader.read();

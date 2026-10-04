@@ -3,8 +3,8 @@
 import { useSyncExternalStore } from "react";
 import { PageFrame } from "@/components/layout/SectionPage";
 import ApiKeySection from "@/components/settings/ApiKeySection";
+import TelegramSection from "@/components/settings/TelegramSection";
 import { PanelTitle } from "@/components/layout/ui";
-import { clearLocal } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
 import { testVoice } from "@/services/jarvis";
 import { speechRecognitionSupported } from "@/voice/push-to-talk";
@@ -36,7 +36,7 @@ export default function SettingsView() {
             <dt className="text-ink-faint">SPEECH INPUT</dt>
             <dd className="text-ink-dim">{sttSupported ? "Browser push-to-talk" : "Not supported in this browser"}</dd>
             <dt className="text-ink-faint">STORAGE</dt>
-            <dd className="text-ink-dim">Demo graph + browser storage (SQLite in Phase 3)</dd>
+            <dd className="text-ink-dim">Demo graph + ~/.jarvis on this computer (permanent)</dd>
           </dl>
         </section>
 
@@ -65,17 +65,6 @@ export default function SettingsView() {
           >
             Test voice
           </button>
-          <button
-            onClick={() => {
-              if (confirm("Delete the notes, tasks and memories you created in this browser? This cannot be undone.")) {
-                clearLocal();
-                window.location.reload();
-              }
-            }}
-            className="ml-2 mt-5 border border-rose-400/40 px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-wider text-rose-300/90 hover:border-rose-400"
-          >
-            Clear items I created
-          </button>
         </section>
 
         <ApiKeySection
@@ -97,6 +86,7 @@ export default function SettingsView() {
           testId="claude-key-section"
           help={<>Kalitni console.anthropic.com → API Keys dan nusxalab, shu yerga joylang va <b>Saqlash</b> ni bosing.</>}
         />
+        <TelegramSection />
       </div>
     </PageFrame>
   );

@@ -8,8 +8,8 @@ import NavRail from "@/components/layout/NavRail";
 import { loadGraph, migrateLocal } from "@/lib/graph-instance";
 import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { refreshStatus } from "@/lib/status";
-import { setNavigator } from "@/services/jarvis";
-import type { KGData } from "@/types/graph";
+import { setNavigator, syncNodes } from "@/services/jarvis";
+import type { KGData, KGEdge, KGNode } from "@/types/graph";
 
 let booted = false;
 
@@ -46,6 +46,25 @@ async function boot() {
     /* storage unavailable: keep the default */
   }
   await refreshStatus();
+  void checkBots();
+}
+
+/** Connected Telegram bots get a fresh health check at start-up (read-only Telegram calls). */
+async function checkBots() {
+  try {
+    const list = (await fetch("/api/telegram").then((r) => r.json())) as { bots?: unknown[] };
+    if (!list.bots?.length) return;
+    const j = (await fetch("/api/telegram/check", { method: "POST", headers: { "x-jarvis-local": "1" } }).then((r) => r.json())) as {
+      bots?: { username: string; status: { health: string } | null }[];
+      nodes?: KGNode[];
+      edges?: KGEdge[];
+    };
+    syncNodes(j.nodes ?? [], j.edges ?? []);
+    const bad = (j.bots ?? []).filter((b) => b.status && b.status.health !== "ok");
+    useJarvis.getState().log(bad.length ? "error" : "system", bad.length ? `Telegram: ${bad.map((b) => "@" + b.username).join(", ")} needs attention` : `Telegram: ${j.bots?.length} bot(s) OK`);
+  } catch {
+    /* Telegram check is optional */
+  }
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
