@@ -45,3 +45,6 @@ next-env.d.ts
 
 # JARVIS personal data (memories, tasks, notes)
 /data/
+
+# set by the in-app updater
+/.jarvis-version
