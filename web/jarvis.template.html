@@ -77,6 +77,9 @@ button { cursor: pointer; }
 .toggle { height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); background: transparent; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
+.voicebar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
+.voicebar select { flex: 1; min-width: 0; height: 28px; background: var(--bg); border: 1px solid var(--line-strong); color: var(--ink-dim); font-family: var(--body); font-size: 12px; text-transform: none; letter-spacing: 0; padding: 0 6px; }
+.voicebar .ghost { height: 28px; }
 .log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .msg { max-width: 92%; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .msg .who { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-faint); }
@@ -95,6 +98,7 @@ button { cursor: pointer; }
 .welcome { color: var(--ink-dim); line-height: 1.6; }
 .welcome h3 { margin: 0 0 6px; font-family: var(--display); font-weight: 500; font-size: 18px; color: var(--ink); text-wrap: balance; }
 .welcome p { margin: 0 0 12px; }
+.welcome .tip { font-size: 12.5px; color: var(--ink-faint); border-left: 2px solid var(--line-strong); padding-left: 10px; }
 .sugg { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .sugg button { text-align: left; border: 1px solid var(--line-strong); background: transparent; padding: 7px 10px; color: var(--ink-dim); font-size: 13px; }
 .sugg button:hover { color: var(--ink); border-color: var(--accent); }
@@ -142,6 +146,11 @@ button { cursor: pointer; }
       <button class="toggle" id="deep" type="button" aria-pressed="false" title="Murakkab savollar uchun chuqurroq o'ylaydi (sekinroq)">Chuqur</button>
       <button class="toggle" id="voice" type="button" aria-pressed="false" title="Javoblarni ovoz chiqarib o'qiydi">Ovoz</button>
     </header>
+    <div class="voicebar" id="voicebar" hidden>
+      <label for="voicePick">Ovoz</label>
+      <select id="voicePick"></select>
+      <button class="ghost" id="voiceTest" type="button">Sinash</button>
+    </div>
     <div class="log" id="log" aria-live="polite"></div>
     <form class="compose" id="compose">
       <label for="input" hidden>Xabar</label>
@@ -425,23 +434,72 @@ const legendCats = ["person", "project", "concept", "skill", "tool", "note", "fi
 document.getElementById("legend").replaceChildren(...legendCats.map((c) => el("span", {}, el("i", { style: `background:${DATA.categories[c].color}` }), catLabel(c))));
 
 // ── Voice output (browser voice) ────────────────────────────────────
-let voiceOn = store.get("jarvis.web.voice", false);
+let voiceOn = store.get("jarvis.web.voice", true);
 const voiceBtn = document.getElementById("voice");
-voiceBtn.setAttribute("aria-pressed", String(voiceOn));
-voiceBtn.onclick = () => { voiceOn = !voiceOn; voiceBtn.setAttribute("aria-pressed", String(voiceOn)); store.set("jarvis.web.voice", voiceOn); if (!voiceOn) speechSynthesis?.cancel(); else speak("Ovoz yoqildi."); };
-function speak(text) {
-  if (!voiceOn || !("speechSynthesis" in window)) return;
+const voiceBar = document.getElementById("voicebar");
+const voicePick = document.getElementById("voicePick");
+const hasTTS = "speechSynthesis" in window;
+let voices = [];
+
+// Uzbek text, rewritten so a Turkish voice pronounces it naturally.
+function uzForTurkish(t) {
+  return t.replace(/[oO][ʻ'‘’`]/g, (m) => (m[0] === "o" ? "o" : "O")).replace(/([gG])[ʻ'‘’`]/g, "$1")
+    .replace(/sh/g, "ş").replace(/Sh/g, "Ş").replace(/ch/g, "ç").replace(/Ch/g, "Ç")
+    .replace(/q/g, "k").replace(/Q/g, "K").replace(/x/g, "h").replace(/X/g, "H").replace(/j/g, "c").replace(/J/g, "C").replace(/w/g, "v");
+}
+// Uzbek Latin → Uzbek Cyrillic, for Russian voices.
+const CYR = [["o'", "ў"], ["g'", "ғ"], ["sh", "ш"], ["ch", "ч"], ["yo", "ё"], ["yu", "ю"], ["ya", "я"], ["ye", "е"], ["a", "а"], ["b", "б"], ["d", "д"], ["e", "е"], ["f", "ф"], ["g", "г"], ["h", "ҳ"], ["i", "и"], ["j", "ж"], ["k", "к"], ["l", "л"], ["m", "м"], ["n", "н"], ["o", "о"], ["p", "п"], ["q", "қ"], ["r", "р"], ["s", "с"], ["t", "т"], ["u", "у"], ["v", "в"], ["x", "х"], ["y", "й"], ["z", "з"]];
+function uzForRussian(t) {
+  let s = t.replace(/[ʻ‘’`]/g, "'"), out = "";
+  for (let i = 0; i < s.length; ) {
+    let hit = null;
+    for (const [lat, cyr] of CYR) if (s.substr(i, lat.length).toLowerCase() === lat) { hit = [lat, cyr]; break; }
+    if (!hit) { out += s[i++]; continue; }
+    const up = s[i] !== s[i].toLowerCase();
+    out += up ? hit[1].toUpperCase() : hit[1]; i += hit[0].length;
+  }
+  return out.replace(/ҳ/g, "х").replace(/Ҳ/g, "Х").replace(/қ/g, "к").replace(/Қ/g, "К").replace(/ғ/g, "г").replace(/Ғ/g, "Г").replace(/ў/g, "у").replace(/Ў/g, "У");
+}
+const isUz = (t) => /\b(va|bu|men|siz|uchun|bilan|qanday|haqida|kerak|bor|yo'q|ham)\b|\b\w+(lar|ni|ning|dagi)\b|[og][ʻ'‘’]/i.test(t) && !/\b(the|and|you|is)\b/i.test(t);
+const vlang = (v) => v.lang.toLowerCase().replace("_", "-");
+function bestVoice() {
+  const by = (p) => voices.filter((v) => vlang(v).startsWith(p)).sort((a, b) => /google|yelda|premium|enhanced/i.test(b.name) - /google|yelda|premium|enhanced/i.test(a.name))[0];
+  return by("uz") ?? by("tr") ?? by("ru") ?? by("en");
+}
+function currentVoice() { return voices.find((v) => v.voiceURI === store.get("jarvis.web.voicePick", "")) ?? bestVoice(); }
+function loadVoices() {
+  if (!hasTTS) return;
+  voices = speechSynthesis.getVoices();
+  const rank = (v) => (vlang(v).startsWith("uz") ? 0 : vlang(v).startsWith("tr") ? 1 : vlang(v).startsWith("ru") ? 2 : vlang(v).startsWith("en") ? 3 : 4);
+  const cur = currentVoice();
+  voicePick.replaceChildren(...[...voices].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)).filter((v) => rank(v) < 4)
+    .map((v) => { const o = el("option", { value: v.voiceURI }, `${v.name} (${v.lang})`); if (cur && v.voiceURI === cur.voiceURI) o.selected = true; return o; }));
+}
+if (hasTTS) { loadVoices(); speechSynthesis.addEventListener?.("voiceschanged", loadVoices); }
+voicePick.onchange = () => { store.set("jarvis.web.voicePick", voicePick.value); speak("Salom! Men JARVIS. Ovozim shunday eshitiladi.", true); };
+document.getElementById("voiceTest").onclick = () => speak("Salom! Men JARVIS. Ovozim shunday eshitiladi.", true);
+function syncVoiceUi() { voiceBtn.setAttribute("aria-pressed", String(voiceOn)); voiceBar.hidden = !voiceOn || !hasTTS; }
+syncVoiceUi();
+voiceBtn.onclick = () => { voiceOn = !voiceOn; store.set("jarvis.web.voice", voiceOn); syncVoiceUi(); if (!voiceOn) speechSynthesis?.cancel(); };
+
+function speak(text, force) {
+  if ((!voiceOn && !force) || !hasTTS) return;
   const synth = speechSynthesis; synth.cancel();
-  const voices = synth.getVoices();
-  const by = (p) => voices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith(p));
-  const uz = /[oʻ'g']|\b(va|bu|men|siz|uchun|bilan)\b/i.test(text) && !/\b(the|and|you)\b/i.test(text);
-  const v = uz ? by("uz") ?? by("tr") ?? by("ru") : by("en-gb") ?? by("en");
-  const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
+  if (!voices.length) voices = synth.getVoices();
+  const v = currentVoice();
+  let say = text.replace(/[*_#>`]/g, "").slice(0, 1500);
+  if (v && isUz(say)) {
+    const conv = vlang(v).startsWith("tr") ? uzForTurkish : vlang(v).startsWith("ru") ? uzForRussian : null;
+    // Leave names and English words (YouTube, JARVIS, Claude) as they are.
+    if (conv) say = say.replace(/[A-Za-z][A-Za-zʻ'‘’`]*/g, (w) => (/.[A-Z]|[cw]|th|ee|oo/.test(w) ? w : conv(w)));
+  }
+  const u = new SpeechSynthesisUtterance(say);
   if (v) { u.voice = v; u.lang = v.lang; }
-  u.rate = 1; u.pitch = 0.92;
-  u.onstart = () => setOrb("speaking"); u.onend = u.onerror = () => setOrb("idle");
+  u.rate = 0.98; u.pitch = 0.95;
+  u.onstart = () => setOrb("speaking"); u.onend = u.onerror = () => { setOrb("idle"); if (handsFree) input.focus(); };
   synth.speak(u); synth.resume();
 }
+let handsFree = true;
 
 // ── Chat ────────────────────────────────────────────────────────────
 const log = document.getElementById("log");
@@ -485,6 +543,7 @@ function renderWelcome() {
   const box = el("div", { class: "welcome" },
     el("h3", {}, "Salom, Izzatillo. Men shu yerdaman."),
     el("p", {}, "Loyihalaringiz, rejalaringiz yoki istalgan mavzu haqida gaplashamiz. Bilim grafingizdan topgan narsalarimni grafda yoritib ko'rsataman."),
+    el("p", { class: "tip" }, "Gapirib yozish: telefonda klaviaturadagi 🎤 tugmasini, Mac'da Fn tugmasini ikki marta bosing. JARVIS javobini ovoz chiqarib aytadi."),
     el("div", { class: "sugg" }, ...[
       "Hozir nima ustida ishlayapman?",
       "ICT bilan bog'liq hamma narsani ko'rsat",
