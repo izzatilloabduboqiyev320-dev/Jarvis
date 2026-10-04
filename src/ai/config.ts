@@ -17,7 +17,7 @@ export function getAIConfig() {
     chatProvider,
     model: process.env.JARVIS_MODEL?.trim() || "claude-sonnet-5-5",
     geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
-    geminiTtsModel: process.env.GEMINI_TTS_MODEL?.trim() || "gemini-3.8-flash-tts",
+    geminiTtsModel: process.env.GEMINI_TTS_MODEL?.trim() || "gemini-3.8-flash-lite-tts",
     geminiVoice: process.env.GEMINI_VOICE?.trim() || "Charon",
     modelLabel: chatProvider === "gemini" ? "GEMINI" : "CLAUDE",
   };
