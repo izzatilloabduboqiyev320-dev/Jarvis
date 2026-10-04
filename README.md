@@ -55,15 +55,16 @@ For a faster production build: `npm run build && npm start`.
 | Markets (TradingView) | "BTC narxi qancha?", "oltin grafigini och", "BTC 70000 dan oshsa ayt". Live prices from free public endpoints (Binance for crypto pairs, Yahoo Finance for stocks/forex/gold), TradingView charts opened with approval, price alerts checked every minute and announced in JARVIS and Telegram. Read-only: there is no trading code at all |
 | Telegram bots | Settings → **Telegram botlar**: paste a bot token from @BotFather. The bot appears on the graph and JARVIS checks it at start-up and when asked ("botlarim ishlayaptimi?"). Read-only: only `getMe` and `getWebhookInfo` are called (never `getUpdates`, never sends). Tokens stay in `~/.jarvis/telegram.json` (owner-only) and never reach the browser |
 | JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
-| Chat | chat window on the graph page and /chat; streams Claude replies when `ANTHROPIC_API_KEY` is set, otherwise the local brain answers; history kept in the browser |
-| Activity stream | every step JARVIS takes, timestamped |
+| Chat (real Claude brain) | chat window on the graph page and /chat. For each message the server finds only the relevant memories and graph items, gives them to Claude (Gemini as backup) with the tools, streams the answer, and saves the conversation in `~/.jarvis/conversations.json` (survives reloads, restarts and other browsers; Telegram has its own conversation). Without an AI key the local brain answers |
+| Activity stream | real steps from the server (request received, memory/graph search and what was found, AI call, tools, approvals, errors), kept in `~/.jarvis/activity.json` and shown again after a reload; Telegram steps are marked |
 | Pages | /graph (main), /chat, /memory, /files, /agents, /skills, /tasks, /settings |
 | Scale | `/graph?stress=5000` loads 5,000 extra synthetic nodes for performance testing |
 
 ## Checks
 
 ```bash
-npm run check   # lint + typecheck + query-engine smoke test + production build
+npm test        # unit + API tests (search, retrieval, conversations, activity, /api/chat with a fake Claude)
+npm run check   # lint + typecheck + query-engine smoke test + tests + production build
 ```
 
 ## Most important files
@@ -79,6 +80,10 @@ npm run check   # lint + typecheck + query-engine smoke test + production build
 | `src/lib/store.ts` | app state (selection, focus, filters, HUD, activity) |
 | `src/components/hud/JarvisHud.tsx` + `src/app/globals.css` | the HUD and the design system |
 | `src/app/api/graph`, `src/app/api/status` | server routes (graph data; AI status, never exposes keys) |
+| `src/ai/provider.ts` | the server pipeline `runJarvis`: retrieve context → Claude/Gemini with tools → save conversation → activity log |
+| `src/ai/prompts.ts`, `src/ai/context.ts`, `src/ai/types.ts` | JARVIS's system prompt (personality, intents), relevant-context retrieval, shared chat types |
+| `src/knowledge/graph-search.ts` | keyword search over the graph (English/Uzbek/Russian), used by tools and retrieval |
+| `src/server/conversations.ts`, `src/server/activity.ts` | saved conversations and the activity log |
 | `src/ai/tools.ts` | the tools the AI can use, and the events they send to the screen |
 | `src/server/approvals.ts`, `src/server/computer.ts` | the approval system and the whitelisted Mac actions |
 | `src/server/telegram-assistant.ts` | the JARVIS Telegram bot: pairing, polling, voice, approvals |

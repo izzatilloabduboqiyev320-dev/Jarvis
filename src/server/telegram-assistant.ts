@@ -2,10 +2,11 @@ import "server-only";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomInt } from "node:crypto";
 import path from "node:path";
-import { explainAIError, runAgent } from "@/ai/agent";
+import { explainAIError, runJarvis } from "@/ai/provider";
+import { currentConversation, newConversation } from "@/server/conversations";
 import { getAIConfig } from "@/ai/config";
 import { transcribe } from "@/ai/gemini";
-import type { ChatTurn } from "@/ai/chat-types";
+import type { ChatTurn } from "@/ai/types";
 import type { ChatEvent } from "@/ai/tools";
 import { detectLang } from "@/knowledge/uzbek";
 import { decide } from "@/server/approvals";
@@ -45,7 +46,6 @@ const S = shared("tg-assistant", () => ({
   running: false,
   offset: 0,
   pair: null as { code: string; expires: number } | null,
-  history: [] as ChatTurn[],
   busy: false,
   status: "",
   approvalMsgs: new Map<string, { messageId: number; summary: string }>(),
@@ -145,7 +145,7 @@ export async function setAssistant(token: string): Promise<AssistantInfo> {
   if ((await listBots()).some((b) => b.id === me.id)) throw new TgError("Bu bot kuzatiladigan botlar ro'yxatida. JARVIS uchun alohida yangi bot oching.", 400);
   S.gen++;
   S.cfg = { token, botId: me.id, username: String(me.username ?? me.id) };
-  S.history = [];
+  await newConversation("telegram");
   S.offset = 0;
   S.status = "";
   await save();
@@ -158,7 +158,7 @@ export async function setAssistant(token: string): Promise<AssistantInfo> {
 export async function removeAssistant() {
   S.gen++;
   S.cfg = null;
-  S.history = [];
+  await newConversation("telegram");
   S.pair = null;
   await save();
   console.info("[jarvis telegram-bot] disconnected");
@@ -169,7 +169,7 @@ export async function unpairAssistant() {
   if (!c) return;
   delete c.ownerChatId;
   delete c.ownerName;
-  S.history = [];
+  await newConversation("telegram");
   await save();
   newPairCode();
 }
@@ -306,9 +306,10 @@ async function answer(m: Message) {
   }
   if (!text) return;
 
-  S.history.push({ role: "user", content: text.slice(0, 4000) });
-  S.history = S.history.slice(-MAX_TURNS);
-  while (S.history.length && S.history[0].role !== "user") S.history.shift();
+  // History comes from the saved Telegram conversation, so it survives restarts.
+  const history: ChatTurn[] = (await currentConversation("telegram")).messages.slice(-(MAX_TURNS - 1)).map(({ role, content }) => ({ role, content }));
+  history.push({ role: "user", content: text.slice(0, 4000) });
+  while (history.length && history[0].role !== "user") history.shift();
 
   let out = "";
   const emit = (e: ChatEvent) => {
@@ -329,13 +330,12 @@ async function answer(m: Message) {
     } else if (e.t === "tool") console.info(`[jarvis telegram-bot] ${e.summary}`);
   };
   try {
-    await runAgent(provider, { messages: [...S.history], lang: detectLang(text), channel: "telegram", context: { nodes: [] } }, AbortSignal.timeout(5 * 60_000), emit);
+    await runJarvis({ messages: history, lang: detectLang(text), channel: "telegram", context: { nodes: [] } }, AbortSignal.timeout(5 * 60_000), emit);
   } catch (err) {
     console.error("[jarvis telegram-bot] AI error", err instanceof Error ? err.message : err);
     if (!out.trim()) out = `Kechirasiz, javob bera olmadim. Sababi: ${explainAIError(err)}.`;
   }
   out = out.trim() || "…";
-  S.history.push({ role: "assistant", content: out.slice(0, 4000) });
   for (let i = 0; i < out.length; i += 4000) await send(chatId, out.slice(i, i + 4000));
 }
 

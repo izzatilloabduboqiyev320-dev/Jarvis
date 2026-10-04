@@ -9,8 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check:query": "tsx scripts/query-check.ts",
-    "check": "npm run lint && npm run typecheck && npm run check:query && npm run build",
-    "dev:next": "next dev"
+    "check": "npm run lint && npm run typecheck && npm run check:query && npm test && npm run build",
+    "dev:next": "next dev",
+    "test": "node --test --conditions=react-server --import tsx \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

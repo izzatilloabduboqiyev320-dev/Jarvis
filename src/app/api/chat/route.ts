@@ -1,14 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { runAgent } from "@/ai/agent";
+import { runJarvis } from "@/ai/provider";
 import { GeminiError } from "@/ai/gemini";
 import type { ChatEvent } from "@/ai/tools";
 import { isLocalRequest } from "@/ai/key-store";
 import { getAIConfig } from "@/ai/config";
-import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
+import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/types";
 
 /**
- * POST /api/chat — runs JARVIS's AI (Claude, or Gemini when only its key is set) with graph tools
- * and streams newline-delimited JSON events: text, tool, created, updated, focus.
+ * POST /api/chat — runs JARVIS's pipeline (relevant memory + graph context, then Claude, or
+ * Gemini when only its key is set, with tools) and streams newline-delimited JSON events:
+ * text, tool, activity, created, updated, focus, approval.
  * 503 when no AI key is set (the client then uses the local brain).
  */
 
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
     queue.push(e);
     wake?.();
   };
-  void runAgent(provider, req, request.signal, emit)
+  void runJarvis(req, request.signal, emit)
     .catch((err) => {
       failure = err;
     })
@@ -104,9 +105,10 @@ export async function POST(request: Request) {
     });
   const next = () => new Promise<void>((r) => (wake = r));
 
-  // Wait for the first event so auth/model errors become a proper status code.
-  while (!queue.length && !done) await next();
-  if (!queue.length && failure) {
+  // Wait until the AI itself responds (activity steps come first) so auth/model errors become a proper status code.
+  const started = () => queue.some((e) => e.t !== "activity");
+  while (!started() && !done) await next();
+  if (!started() && failure) {
     const err = failure;
     const status = err instanceof Anthropic.APIError && err.status ? err.status : err instanceof GeminiError ? (err.status === 403 ? 401 : err.status) : 502;
     const message =

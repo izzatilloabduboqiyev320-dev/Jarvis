@@ -97,6 +97,8 @@ interface JarvisStore {
   updateMessage: (id: number, text: string) => void;
   setMessages: (m: ChatMessage[]) => void;
   log: (kind: ActivityKind, text: string) => void;
+  /** Puts saved server activity (from earlier sessions) before what this page logged. */
+  seedActivity: (items: { ts: number; kind: ActivityKind; text: string }[]) => void;
   addApproval: (id: string, summary: string, replyId?: number) => void;
   setApproval: (id: string, status: Approval["status"]) => void;
   setTalking: (v: boolean) => void;
@@ -172,6 +174,8 @@ export const useJarvis = create<JarvisStore>((set) => ({
   },
   log: (kind, text) =>
     set((s) => ({ activity: [...s.activity, { id: ++seq, ts: Date.now(), kind, text }].slice(-200) })),
+  seedActivity: (items) =>
+    set((s) => ({ activity: [...items.map((a) => ({ ...a, id: ++seq })), ...s.activity].slice(-200) })),
   addApproval: (id, summary, replyId) =>
     set((s) => ({ approvals: [...s.approvals, { id, summary, status: "pending" as const, ts: Date.now(), replyId }].slice(-10) })),
   setApproval: (id, status) => set((s) => ({ approvals: s.approvals.map((a) => (a.id === id ? { ...a, status } : a)) })),

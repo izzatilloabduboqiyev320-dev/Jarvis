@@ -1,6 +1,8 @@
 import "server-only";
+import type { ActivityKind } from "@/server/activity";
 import { createGraph, describePath, findPath, type KnowledgeGraph } from "@/knowledge/graph";
 import type { ItemCategory } from "@/knowledge/items";
+import { resolveItem, searchGraph } from "@/knowledge/graph-search";
 import { addItem, getGraphData, setTaskStatus } from "@/server/store";
 import { botGraph, botNodeId, checkBots } from "@/server/telegram";
 import type { KGEdge, KGNode } from "@/types/graph";
@@ -25,6 +27,7 @@ export type ChatEvent =
   | { t: "created"; node: KGNode; edges: KGEdge[] }
   | { t: "updated"; node: KGNode; edges?: KGEdge[] }
   | { t: "focus"; ids: string[]; path?: boolean }
+  | { t: "activity"; kind: ActivityKind; text: string }
   | ApprovalEvent;
 
 export interface ToolSpec {
@@ -55,7 +58,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "show_on_graph",
-    description: "Highlight items on Izzatillo's screen. Call ttheir after finding the items an answer is about.",
+    description: "Highlight items on Izzatillo's screen. Call this after finding the items an answer is about.",
     parameters: { type: "object", properties: { ids }, required: ["ids"] },
   },
   {
@@ -142,46 +145,8 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
 ];
 
-function norm(s: string) {
-  return s
-    .toLowerCase()
-    .replace(/[’‘ʻʼ`´]/g, "'")
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "");
-}
-
-function search(graph: KnowledgeGraph, q: string, type?: string, limit = 10) {
-  const words = norm(q)
-    .split(/[^a-z0-9'+#.]+/)
-    .filter((w) => w.length > 1);
-  const scored: [number, string][] = [];
-  graph.forEachNode((id, a) => {
-    if (type && a.category !== type) return;
-    const label = norm(a.label);
-    const body = norm(`${a.node.description} ${a.node.tags.join(" ")} ${a.category} ${a.node.content ?? ""}`);
-    let s = words.length ? 0 : 1;
-    for (const w of words) {
-      if (label === w) s += 12;
-      else if (label.includes(w)) s += 6;
-      if (body.includes(w)) s += 2;
-    }
-    if (s) scored.push([s + a.importance * 2 + graph.degree(id) * 0.05, id]);
-  });
-  return scored
-    .sort((x, y) => y[0] - x[0])
-    .slice(0, limit)
-    .map(([, id]) => id);
-}
-
-function resolve(graph: KnowledgeGraph, ref: string): string | null {
-  if (graph.hasNode(ref)) return ref;
-  const k = norm(ref).trim();
-  let hit: string | null = null;
-  graph.forEachNode((id, a) => {
-    if (!hit && norm(a.label) === k) hit = id;
-  });
-  return hit ?? search(graph, ref, undefined, 1)[0] ?? null;
-}
+const search = (graph: KnowledgeGraph, q: string, type?: string, limit = 10) => searchGraph(graph, q, { type, limit }).map((h) => h.id);
+const resolve = resolveItem;
 
 function brief(graph: KnowledgeGraph, id: string) {
   const a = graph.getNodeAttributes(id);

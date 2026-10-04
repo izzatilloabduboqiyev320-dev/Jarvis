@@ -1,6 +1,6 @@
 "use client";
 
-import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/chat-types";
+import { CHAT_LIMITS, type ChatRequest, type ChatTurn, type ContextNode } from "@/ai/types";
 import type { ChatEvent } from "@/ai/tools";
 import { addEdgeToGraph, addNodeToGraph, refreshSizes, topHubs } from "@/knowledge/graph";
 import { buildItem, type ItemCategory } from "@/knowledge/items";
@@ -8,7 +8,7 @@ import { detectLang } from "@/knowledge/uzbek";
 import { runQuery, type QueryResult } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph, persistLocal } from "@/lib/graph-instance";
-import { CHAT_KEY, useJarvis } from "@/lib/store";
+import { CHAT_KEY, useJarvis, type ActivityKind } from "@/lib/store";
 import { speak, speakGemini } from "@/voice/speak";
 import { startPushToTalk } from "@/voice/push-to-talk";
 import type { KGEdge, KGNode } from "@/types/graph";
@@ -34,6 +34,34 @@ function saveChat() {
 export function clearChat() {
   useJarvis.getState().setMessages([]);
   saveChat();
+  // The saved conversation is archived on the server, and a new one starts.
+  void fetch("/api/conversations", { method: "POST", headers: { "Content-Type": "application/json", "x-jarvis-local": "1" }, body: JSON.stringify({ action: "new" }) }).catch(() => {});
+}
+
+/** In AI mode the conversation saved on this computer is the source of truth (it survives browser changes). */
+export async function loadSavedConversation() {
+  try {
+    const j = (await fetch("/api/conversations").then((r) => r.json())) as { current?: { messages: { role: "user" | "assistant"; content: string; ts: number }[] } };
+    const saved = j.current?.messages ?? [];
+    if (!saved.length) return;
+    useJarvis.getState().setMessages(
+      saved.slice(-50).map((m, i) => ({ id: i + 1, role: m.role === "user" ? "user" : "jarvis", text: m.content, ts: m.ts })),
+    );
+    saveChat();
+  } catch {
+    /* keep the copy in this browser */
+  }
+}
+
+/** Earlier activity from the server log, so the panel shows what JARVIS did before this page opened. */
+export async function loadActivity() {
+  try {
+    const j = (await fetch("/api/activity").then((r) => r.json())) as { entries?: { ts: number; kind: ActivityKind; text: string; channel?: string }[] };
+    const items = (j.entries ?? []).slice(-60).map((e) => ({ ts: e.ts, kind: e.kind, text: e.channel === "telegram" ? `Telegram: ${e.text}` : e.text }));
+    if (items.length) useJarvis.getState().seedActivity(items);
+  } catch {
+    /* the log is optional */
+  }
 }
 
 /** Knowledge-graph items Claude should see for this message. */
@@ -175,6 +203,8 @@ async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t:
     } else if (e.t === "created") {
       mergeItem(e.node, e.edges);
       s.log("memory", `Saved ${e.node.category} “${e.node.label}” (permanent)`);
+    } else if (e.t === "activity") {
+      if (e.kind !== "user") s.log(e.kind, e.text); // the request itself is already logged here
     } else if (e.t === "updated") syncNodes([e.node], e.edges ?? []);
     else if (e.t === "focus") focusIds(e.ids, e.path);
     else if (e.t === "approval") void askApproval(e.id, e.summary);
@@ -267,7 +297,6 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     if (aiMode) {
       const name = useJarvis.getState().status.model === "GEMINI" ? "Gemini" : "Claude";
       s.setHud("thinking", `Asking ${name}`);
-      s.log("ai", `Asking ${name}`);
       const id = s.addMessage("jarvis", "");
       replyId = id;
       try {

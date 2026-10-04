@@ -1,7 +1,8 @@
 import "server-only";
 import { getAIConfig } from "@/ai/config";
-import type { ChatRequest } from "@/ai/chat-types";
-import { MAX_ROUNDS, systemPrompt } from "@/ai/claude";
+import type { ChatRequest } from "@/ai/types";
+import { MAX_ROUNDS } from "@/ai/claude";
+import { systemPrompt } from "@/ai/prompts";
 import { runTool, TOOL_SPECS, type ChatEvent } from "@/ai/tools";
 import type { Verify } from "@/ai/key-route";
 

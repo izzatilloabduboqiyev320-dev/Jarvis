@@ -1,38 +1,62 @@
 # Architecture
 
 ```
-Browser (Next.js client)                         Server (Next.js route handlers)
-───────────────────────────                      ────────────────────────────────
-AppShell ── boot ── GET /api/graph ───────────▶  demo graph   (Phase 3: SQLite)
-   │                GET /api/status ──────────▶  env check, booleans only
+Browser (Next.js client)                          Server (Next.js route handlers, Node)
+───────────────────────────                       ─────────────────────────────────────────
+AppShell ── boot ── GET /api/graph ────────────▶  store.ts: demo graph + ~/.jarvis items + bots
+   │                GET /api/status ───────────▶  booleans only, never keys
+   │                GET /api/conversations ────▶  conversations.ts (~/.jarvis/conversations.json)
+   │                GET /api/activity ─────────▶  activity.ts (~/.jarvis/activity.json)
    ▼
 graph-instance (graphology, outside React)
-   │
-   ├─ KnowledgeGraph (Sigma.js WebGL, reducers, no React re-renders)
-   ├─ Inspector / TopHubs / FilterPanel  (subscribe to store slices)
-   ├─ CommandPalette (⌘K) / GraphToolbar search
-   │        │
-   │        ▼
-   │   services/jarvis.ts  ── knowledge/query.ts (local brain, graph focus, saves)
-   │        │              └─ POST /api/chat ──▶  ai/claude.ts (Anthropic SDK, streaming)
-   │        ▼
-   └─ store (zustand): focus, selection, HUD state, activity log
+   ├─ KnowledgeGraph (Sigma.js WebGL)
+   ├─ Inspector / TopHubs / FilterPanel / ActivityStream / ChatPanel / JarvisHud
+   ▼
+services/jarvis.ts ── knowledge/query.ts (local intent + graph focus; the whole brain in demo mode)
+   └─ POST /api/chat (NDJSON stream) ──────────▶  ai/provider.ts  runJarvis()
+                                                     1. log "received"
+                                                     2. ai/context.ts: relevant memories + graph items
+                                                        (knowledge/graph-search.ts, never the whole graph)
+                                                     3. ai/prompts.ts system prompt (personality, intents)
+                                                     4. Claude (ai/claude.ts) with tools (ai/tools.ts);
+                                                        Gemini (ai/gemini.ts) if Claude fails or has no key
+                                                     5. outside actions → approvals.ts (Ha / Yo'q)
+                                                     6. save conversation, log every step
+Telegram (telegram-assistant.ts) ──────────────▶  the same runJarvis() with channel "telegram"
 ```
+
+## State at the start of Phase 2 (2026-10-04)
+
+- **Framework:** Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind v4, zustand.
+- **Graph library:** Sigma.js 3 (WebGL) + graphology.
+- **Database:** none yet. JSON files in `~/.jarvis` (atomic writes, owner-only): `jarvis-store.json` (memories, tasks, notes), `telegram.json`, `telegram-assistant.json`, `alerts.json`, `keys.env`; now also `conversations.json` and `activity.json`.
+- **Claude:** Anthropic SDK with streaming and a tool loop; Gemini as backup and for Uzbek voice/transcription.
+- **Mock/demo systems:** a 119-node demo graph is always merged in; the local query engine answers without a key; test mocks live outside the repo.
+- **Voice:** push-to-talk with browser speech recognition, Gemini or browser TTS, hands-free conversation mode, Telegram voice messages via Gemini.
+- **Problems found and fixed in Phase 2:** context was chosen by the browser (Telegram got none); conversations lived only in the browser (Telegram's only in memory); activity was client-side only; the system prompt lived inside the Claude provider; no automated tests.
+- **Still open:** no SQLite or migrations yet (Phase 3); the demo graph can't be switched off (Phase 10); no memory deduplication beyond the prompt rule; no file ingestion; tools have no explicit permission levels yet (approval is per tool).
 
 ## Decisions
 
-- **Sigma.js + Graphology** over Cytoscape/D3: WebGL rendering keeps 5,000+ nodes interactive; D3/Cytoscape draw with SVG/canvas and slow down in the low thousands. Graphology gives us path finding and layouts on the same data structure.
-- **Graph outside React state.** Hover, drag and animation mutate the graphology instance and call `sigma.refresh()`; React only re-renders panels when the graph's structure changes (`graphVersion`).
-- **Deterministic layouts** (seeded ForceAtlas2) so the map doesn't reshuffle on every reload.
-- **Local query engine first.** `knowledge/query.ts` handles intent (topic / path / create / open), entity linking and category filters offline. In Phase 2 these functions become Claude tools (`graph_search`, `graph_path`, `create_memory`), so DEMO MODE and AI mode share one code path.
-- **Keys stay on the server.** `src/ai/config.ts` is `server-only`; the browser only learns `mode: demo | ai`.
-- **Storage is swappable.** `/api/graph` is the single data entry point. Phase 3 swaps the demo dataset for SQLite (Drizzle), with a schema designed to move to Postgres + pgvector.
+- **Sigma.js + Graphology:** WebGL keeps 5,000+ nodes interactive; graphology gives path finding and layouts.
+- **Graph outside React state:** hover, drag and animation mutate graphology and refresh sigma; React re-renders panels only on structural changes.
+- **Server decides the context:** the browser may send hints (what it highlighted), but the server retrieves the relevant memories and items itself, so the app and Telegram get the same brain.
+- **Keys stay on the server:** `src/ai/config.ts` is `server-only`; the browser only learns `mode: demo | ai`.
+- **Data outside the project folder:** `~/.jarvis` survives updates and reinstalls.
 
-## Roadmap
+## Roadmap (the user's order)
 
-1. **Foundation** ✓ graph, inspector, hubs, filters, HUD, palette, demo data.
-2. **AI** — started: `/api/chat` streams Claude replies with knowledge-graph context (`src/ai/claude.ts`). Next: `AIProvider` interface with `ClaudeProvider` (OpenAI/local later), `/api/chat` with streaming, JARVIS system prompt, tool-calling over the graph engine, permission levels 0–3 with an approval dialog, "JARVIS AI service unavailable" fallback.
-3. **Memory** — SQLite (nodes, edges, memories, conversations, messages, tools, agents, tasks, files, settings), memory types, embeddings and hybrid search (keyword + vector + graph + recency + importance), graph persistence.
-4. **Files** — drag-and-drop PDF/TXT/MD/DOCX ingestion → chunk → entity/relationship extraction → graph.
-5. **Voice** — server STT, ElevenLabs TTS with browser fallback, "Jarvis" wake workflow.
-6. **Agents** — agent framework with step/time/tool limits, skills, MCP service layer, full activity stream.
+1. Inspect architecture ✓
+2. Backup ✓ (branch `backup-before-phase2`)
+3. Claude backend connection ✓
+4. Real chat ✓
+5. Persistent conversations ✓
+6. Memory: SQLite with migrations and backups, memory types and fields, deduplication
+7. Graph persistence in SQLite
+8. Memory → graph integration (entities and relations such as HAS_RULE)
+9. Unified search `jarvisSearch(query)`
+10. File ingestion (PDF, TXT, MD, DOCX)
+11. File → graph extraction
+12. Voice: STT/TTS provider interfaces, HUD states from real events
+13. Tool framework: registry with permission levels 0–3
+14. Approval system on top of the permission levels

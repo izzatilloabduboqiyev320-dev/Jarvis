@@ -6,11 +6,15 @@ export interface ChatTurn {
 }
 
 export interface ContextNode {
+  /** Graph id, so the AI can highlight or open the item. Set by the server. */
+  id?: string;
   label: string;
   category: string;
   description?: string;
   updated?: string;
   links?: string[];
+  /** Full text of a memory or note (server retrieval only). */
+  content?: string;
 }
 
 export interface ChatRequest {
@@ -19,7 +23,10 @@ export interface ChatRequest {
   /** Where the message came from; Telegram has no graph on screen. */
   channel?: "app" | "telegram";
   context: {
+    /** Graph items related to the message. The client may send hints; the server adds what it finds. */
     nodes: ContextNode[];
+    /** Saved memories related to the message (server retrieval only). */
+    memories?: ContextNode[];
     selected?: string;
     /** What the local engine already did for this message (e.g. "saved memory X"). */
     localAction?: string;

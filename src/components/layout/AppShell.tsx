@@ -9,7 +9,7 @@ import UpdateButton from "@/components/layout/UpdateButton";
 import { loadGraph, migrateLocal } from "@/lib/graph-instance";
 import { useJarvis, VOICE_LANG_KEY, VOICE_REPLIES_KEY, CHAT_KEY, type ChatMessage } from "@/lib/store";
 import { refreshStatus } from "@/lib/status";
-import { checkFiredAlerts, setNavigator, syncNodes } from "@/services/jarvis";
+import { checkFiredAlerts, loadActivity, loadSavedConversation, setNavigator, syncNodes } from "@/services/jarvis";
 import type { KGData, KGEdge, KGNode } from "@/types/graph";
 
 let booted = false;
@@ -47,6 +47,8 @@ async function boot() {
     /* storage unavailable: keep the default */
   }
   await refreshStatus();
+  void loadActivity();
+  if (useJarvis.getState().status.mode === "ai") await loadSavedConversation();
   void checkBots();
   void checkFiredAlerts();
   setInterval(() => void checkFiredAlerts(), 30_000);
