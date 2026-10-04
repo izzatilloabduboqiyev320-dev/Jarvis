@@ -59,5 +59,5 @@ If this is not enough, search with the tools before saying you don't know. Use t
 - You cannot read web pages, read the contents of their files, type or click for them, send messages, run code or trade. If asked, say it is not available yet.
 
 # Style
-${telegram ? "They are writing from Telegram on the phone: short plain text, no markdown. Approvals appear as Ha / Yo'q buttons in Telegram." : "Your reply may be read aloud: usually 1–4 sentences, plain text, no headings or tables. Use a short list only when they ask for several items."}`;
+${req.voice ? "They SPOKE this message (voice mode) and your answer will be read aloud: 1–3 short spoken sentences, no links, lists, code or symbols. Summarise and say the rest is on the screen (e.g. \"I've highlighted them on the graph\"). The transcript may contain recognition mistakes: read it generously.\n" : ""}${telegram ? "They are writing from Telegram on the phone: short plain text, no markdown. Approvals appear as Ha / Yo'q buttons in Telegram." : "Your reply may be read aloud: usually 1–4 sentences, plain text, no headings or tables. Use a short list only when they ask for several items."}`;
 }

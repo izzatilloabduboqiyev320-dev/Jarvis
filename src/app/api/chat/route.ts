@@ -48,6 +48,7 @@ function parse(body: unknown): ChatRequest | null {
   return {
     messages,
     lang: b.lang === "uz" ? "uz" : "en",
+    voice: b.voice === true,
     context: {
       nodes: nodes.filter((n) => n.label),
       selected: str(ctx.selected, 120) || undefined,

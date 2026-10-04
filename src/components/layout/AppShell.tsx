@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { installVoiceControls } from "@/voice/controls";
+import VoiceDebug from "@/components/jarvis/VoiceDebug";
 import { useRouter } from "next/navigation";
 import CommandPalette from "@/components/jarvis/CommandPalette";
 import ItemViewer from "@/components/jarvis/ItemViewer";
@@ -36,7 +38,7 @@ async function boot() {
   }
   try {
     const lang = localStorage.getItem(VOICE_LANG_KEY);
-    if (lang === "uz-UZ" || lang === "en-US") s.setVoiceLang(lang);
+    if (lang === "uz-UZ" || lang === "en-US" || lang === "ru-RU") s.setVoiceLang(lang);
     const saved = JSON.parse(localStorage.getItem(CHAT_KEY) ?? "[]") as ChatMessage[];
     if (Array.isArray(saved) && saved.length && !s.messages.length) {
       s.setMessages(saved.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "jarvis")).slice(-50));
@@ -49,6 +51,7 @@ async function boot() {
   await refreshStatus();
   void loadActivity();
   if (useJarvis.getState().status.mode === "ai") await loadSavedConversation();
+  installVoiceControls();
   void checkBots();
   void checkFiredAlerts();
   setInterval(() => void checkFiredAlerts(), 30_000);
@@ -86,6 +89,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <UpdateButton banner />
       <ItemViewer />
+      <VoiceDebug />
     </div>
   );
 }

@@ -57,10 +57,11 @@ export async function runJarvis(req: ChatRequest, signal: AbortSignal, emit: (e:
     const used = await runAgent(provider, request, signal, relay);
     text = text.trim();
     act("ai", `${used === "claude" ? "Claude" : "Gemini"} reasoning complete, response generated`);
-    await appendTurns(channel, [{ role: "user", content: question }, { role: "assistant", content: text }]);
+    await appendTurns(channel, [{ role: "user", content: req.voice ? `🎙 ${question}` : question }, { role: "assistant", content: text }]);
     return { provider: used, text };
   } catch (err) {
-    act("error", explainAIError(err));
+    if (signal.aborted) act("system", "Request cancelled");
+    else act("error", explainAIError(err));
     // A failed request is saved only if JARVIS had started answering; an unanswered question would otherwise merge into the next one.
     if (text.trim()) await appendTurns(channel, [{ role: "user", content: question }, { role: "assistant", content: text.trim() }]);
     throw err;

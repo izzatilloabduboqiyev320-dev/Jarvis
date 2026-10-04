@@ -183,6 +183,29 @@ body {
 .hud[data-state="speaking"] .hud-wave.w2 { animation: hud-wave 1.6s ease-out 0.8s infinite; }
 .hud[data-state="speaking"] .hud-ring-outer { animation: hud-talk 0.45s ease-in-out infinite alternate; opacity: 0.85; }
 
+/* Wake listening: calm, the outer ring breathes with the room's sound level */
+.hud[data-state="wake_listening"] .hud-ring-outer {
+  animation: none;
+  opacity: calc(0.35 + var(--level) * 0.5);
+  transform: scale(calc(1 + var(--level) * 0.04));
+  transition: transform 0.08s linear, opacity 0.08s linear;
+}
+.hud[data-state="wake_listening"] .hud-led { animation-duration: 3.2s; }
+
+/* Awake ("Jarvis" heard): one bright pulse */
+.hud[data-state="awake"] .hud-ring-outer { opacity: 1; stroke-width: 2.4px; animation: hud-talk 0.3s ease-in-out 2 alternate; }
+.hud[data-state="awake"] .hud-wave.w1 { animation: hud-wave 0.9s ease-out 1; }
+
+/* Transcribing / searching: the thinking arcs, faster while searching */
+.hud[data-state="transcribing"] .hud-arc.a1,
+.hud[data-state="searching"] .hud-arc.a1 { opacity: 0.85; animation: hud-spin 1.6s linear infinite; }
+.hud[data-state="searching"] .hud-arc.a2 { opacity: 0.85; animation: hud-spin 2.2s linear infinite reverse; }
+
+/* Waiting for approval: the yellow arc, slowly */
+.hud[data-state="waiting_approval"] .hud-exec { opacity: 1; animation: hud-spin 3s linear infinite; }
+.hud[data-state="waiting_approval"] .hud-state { color: var(--color-exec); }
+.hud[data-state="waiting_approval"] .hud-led { animation-duration: 1.2s; }
+
 /* Error: red, gentle flicker */
 .hud[data-state="error"] .hud-ring-outer { animation: hud-flicker 1.2s steps(2) infinite; opacity: 0.8; }
 
@@ -222,7 +245,8 @@ body {
   box-shadow: 0 0 6px currentColor;
   animation: hud-blink 2.4s ease-in-out infinite;
 }
-.hud[data-state="listening"] .hud-led { animation-duration: 0.9s; }
+.hud[data-state="listening"] .hud-led,
+.hud[data-state="awake"] .hud-led { animation-duration: 0.9s; }
 .hud-hint {
   max-width: 120px;
   overflow: hidden;

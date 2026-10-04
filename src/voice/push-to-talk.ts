@@ -1,20 +1,14 @@
 "use client";
 
+import { acquireMic, releaseMic } from "@/voice/mic";
+
 /**
- * Push-to-talk speech-to-text using the browser's Web Speech API (free, no key)
- * plus a microphone level meter that drives the HUD's listening ring.
- * Phase 5 replaces/augments this with server-side STT and a wake word.
+ * One-phrase speech-to-text with the browser's Web Speech API (free, no key),
+ * used for answering approvals by voice ("ha" / "yo'q"). The wake word and
+ * commands go through voice-manager.ts.
  */
 
-type Listener = (level: number) => void;
-const levelListeners = new Set<Listener>();
-
-export function onMicLevel(fn: Listener) {
-  levelListeners.add(fn);
-  return () => {
-    levelListeners.delete(fn);
-  };
-}
+export { onMicLevel } from "@/voice/mic";
 
 interface RecognitionLike {
   lang: string;
@@ -79,42 +73,18 @@ export function startPushToTalk(h: PushToTalkHandlers, lang = "uz-UZ"): () => vo
     return () => {};
   }
 
-  let stream: MediaStream | null = null;
-  let ctx: AudioContext | null = null;
-  let raf = 0;
   let finalText = "";
-  let stopped = false;
-
+  let meter = false;
+  let ended = false;
   const stopMeter = () => {
-    cancelAnimationFrame(raf);
-    stream?.getTracks().forEach((t) => t.stop());
-    ctx?.close().catch(() => {});
-    levelListeners.forEach((fn) => fn(0));
+    ended = true;
+    if (meter) releaseMic();
+    meter = false;
   };
-
-  navigator.mediaDevices
-    ?.getUserMedia({ audio: true })
-    .then((s) => {
-      if (stopped) {
-        s.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      stream = s;
-      ctx = new AudioContext();
-      const src = ctx.createMediaStreamSource(s);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (const v of buf) sum += ((v - 128) / 128) ** 2;
-        const rms = Math.sqrt(sum / buf.length);
-        levelListeners.forEach((fn) => fn(Math.min(1, rms * 4)));
-        raf = requestAnimationFrame(tick);
-      };
-      tick();
+  acquireMic()
+    .then(() => {
+      if (ended) releaseMic();
+      else meter = true;
     })
     .catch(() => {
       /* level meter is cosmetic; recognition reports permission errors itself */
@@ -152,7 +122,6 @@ export function startPushToTalk(h: PushToTalkHandlers, lang = "uz-UZ"): () => vo
   }
 
   return () => {
-    stopped = true;
     try {
       rec.stop();
     } catch {

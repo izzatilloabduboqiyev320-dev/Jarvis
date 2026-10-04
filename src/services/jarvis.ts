@@ -9,7 +9,8 @@ import { runQuery, type QueryResult } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph, persistLocal } from "@/lib/graph-instance";
 import { CHAT_KEY, useJarvis, type ActivityKind } from "@/lib/store";
-import { speak, speakGemini } from "@/voice/speak";
+import { speak, speakGemini, stopSpeaking } from "@/voice/speak";
+import { speechLang, toSpeech } from "@/voice/speech-text";
 import { startPushToTalk } from "@/voice/push-to-talk";
 import type { KGEdge, KGNode } from "@/types/graph";
 
@@ -146,7 +147,7 @@ const YES = /(\bha+\b|\bxa\b|mayli|ruxsat|yes|ok(ay)?\b|albatta|bo'ladi|roziman|
 async function askApproval(id: string, summary: string) {
   const s = useJarvis.getState();
   s.addApproval(id, summary, replyId);
-  s.setHud("executing", "Ruxsat kutilmoqda");
+  s.setHud("waiting_approval", "Ruxsat kutilmoqda");
   s.log("system", `Waiting for your approval: ${summary}`);
   if (!s.talking) return;
   const uz = s.voiceLang === "uz-UZ";
@@ -170,14 +171,16 @@ async function askApproval(id: string, summary: string) {
 }
 
 /** Runs the AI via /api/chat (NDJSON events); throws with a readable message on failure. */
-async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t: string) => void): Promise<string> {
+async function streamChat(result: QueryResult, lang: "en" | "uz", voice: boolean, onPartial: (t: string) => void): Promise<string> {
   const s = useJarvis.getState();
   const history: ChatTurn[] = s.messages
     .filter((m) => m.text)
     .slice(-CHAT_LIMITS.messages)
-    .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
-  const body: ChatRequest = { messages: history, lang, context: buildContext(result) };
-  const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text.replace(VOICE_MARK, "") }));
+  const body: ChatRequest = { messages: history, lang, voice, context: buildContext(result) };
+  const ctrl = new AbortController();
+  request = ctrl;
+  const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
   if (!res.ok || !res.body) {
     const err = (await res.json().catch(() => null)) as { message?: string } | null;
     throw new Error(err?.message ?? "JARVIS AI service unavailable");
@@ -205,11 +208,14 @@ async function streamChat(result: QueryResult, lang: "en" | "uz", onPartial: (t:
       s.log("memory", `Saved ${e.node.category} “${e.node.label}” (permanent)`);
     } else if (e.t === "activity") {
       if (e.kind !== "user") s.log(e.kind, e.text); // the request itself is already logged here
+      if (e.kind === "search") s.setHud("searching", "Memory + graph");
+      else if (e.kind === "ai" && e.text.startsWith("Asking")) s.setHud("thinking", e.text);
     } else if (e.t === "updated") syncNodes([e.node], e.edges ?? []);
     else if (e.t === "focus") focusIds(e.ids, e.path);
     else if (e.t === "approval") void askApproval(e.id, e.summary);
     else if (e.t === "approval-done") {
       stopVoiceAnswer?.();
+      s.setHud("thinking");
       s.setApproval(e.id, e.approved ? "approved" : e.reason ? "expired" : "denied");
       const what = useJarvis.getState().approvals.find((a) => a.id === e.id)?.summary ?? "";
       s.log(e.approved ? "system" : "error", `${e.approved ? "Approved" : e.reason === "timeout" ? "No answer — cancelled" : "Declined"}: ${what}`);
@@ -240,9 +246,9 @@ export function setNavigator(fn: (path: string) => void) {
 }
 
 /** Natural Gemini voice when its key is set, otherwise the browser's voice. */
-async function say(text: string, lang: "en" | "uz"): Promise<string | null> {
+async function say(text: string, lang: "en" | "uz" | "ru" = speechLang(text)): Promise<string | null> {
   if (useJarvis.getState().status.voiceOutput === "gemini") {
-    const v = await speakGemini(text);
+    const v = await speakGemini(text, lang);
     if (v) return v;
     useJarvis.getState().log("error", "Gemini voice unavailable — using the browser voice");
   }
@@ -257,16 +263,36 @@ export async function testVoice() {
   s.setHud("speaking", uz ? "Ovoz sinovi" : "Voice test");
   const voice = await say(uz ? "Salom! Men JARVIS. Ovozim eshitilyaptimi?" : "Hello. I am JARVIS. Can you hear me?", uz ? "uz" : "en");
   s.log("system", voice ? `Voice test — voice: ${voice}` : "This browser has no speech output");
-  if (useJarvis.getState().hud === "speaking") useJarvis.getState().setHud("idle");
+  if (useJarvis.getState().hud === "speaking") useJarvis.getState().setHud("standby");
 }
 
-export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}): Promise<QueryResult | null> {
+/** Marks voice messages in the chat ("🎙 …"); stripped before the text goes to the AI. */
+const VOICE_MARK = /^🎙\s*/u;
+
+/** The AI request in progress (Stop cancels it). */
+let request: AbortController | null = null;
+let interrupted = false;
+
+/** Stop button / Esc / "cancel": stops speaking and cancels the request in progress. */
+export function interruptJarvis() {
+  interrupted = true;
+  request?.abort();
+  stopSpeaking();
+  stopVoiceAnswer?.();
+}
+
+export async function askJarvis(input: string, opts: { lang?: "en" | "uz"; voice?: boolean } = {}): Promise<QueryResult | null> {
   const text = input.trim();
-  if (!text || busy) return null;
+  if (!text) return null;
+  if (busy) {
+    useJarvis.getState().log("system", `Still working on the previous request — ignored “${text.slice(0, 60)}”`);
+    return null;
+  }
   busy = true;
+  interrupted = false;
   const s = useJarvis.getState();
   try {
-    s.addMessage("user", text);
+    s.addMessage("user", opts.voice ? `🎙 ${text}` : text);
     s.log("user", `User: “${text}”`);
     s.setHud("thinking", "Understanding request");
     await wait(320);
@@ -300,11 +326,20 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
       const id = s.addMessage("jarvis", "");
       replyId = id;
       try {
-        answer = await streamChat(result, lang, (partial) => useJarvis.getState().updateMessage(id, partial));
+        answer = await streamChat(result, lang, Boolean(opts.voice), (partial) => useJarvis.getState().updateMessage(id, partial));
         brain = name;
       } catch (err) {
+        if (interrupted) {
+          const partial = useJarvis.getState().messages.find((m) => m.id === id)?.text ?? "";
+          useJarvis.getState().updateMessage(id, partial ? `${partial} …` : lang === "uz" ? "(to'xtatildi)" : "(stopped)");
+          saveChat();
+          s.log("system", "Request cancelled");
+          return null;
+        }
         s.log("error", `${(err as Error).message} — answered from local knowledge`);
         answer = result.answer;
+      } finally {
+        request = null;
       }
       useJarvis.getState().updateMessage(id, answer);
     } else {
@@ -314,11 +349,14 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     saveChat();
 
     s.log("ai", `JARVIS responded (${brain})`);
+    if (interrupted) return result;
     s.setHud("speaking", "Responding");
     if (useJarvis.getState().voiceReplies) {
-      const voice = await say(answer, lang);
-      s.log("system", voice ? `Spoke reply — voice: ${voice}` : "This browser has no speech output; reply shown as text");
-    } else await wait(Math.min(2400, 700 + answer.length * 12));
+      // Spoken: a short version without links or lists; the full answer stays in chat.
+      s.log("system", "Speaking response");
+      const voice = await say(toSpeech(answer));
+      if (!interrupted) s.log("system", voice ? `Spoke reply — voice: ${voice}` : "This browser has no speech output; reply shown as text");
+    } else if (!opts.voice) await wait(Math.min(2400, 700 + answer.length * 12));
     return result;
   } catch (err) {
     const msg = (err as Error).message || "Unknown error";
@@ -330,7 +368,7 @@ export async function askJarvis(input: string, opts: { lang?: "en" | "uz" } = {}
     return null;
   } finally {
     busy = false;
-    if (useJarvis.getState().hud !== "listening") useJarvis.getState().setHud("idle");
+    if (useJarvis.getState().hud !== "listening") useJarvis.getState().setHud("standby");
   }
 }
 

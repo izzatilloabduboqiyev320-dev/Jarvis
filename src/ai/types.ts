@@ -22,6 +22,8 @@ export interface ChatRequest {
   lang: "en" | "uz";
   /** Where the message came from; Telegram has no graph on screen. */
   channel?: "app" | "telegram";
+  /** The message was spoken; the answer will be read aloud. */
+  voice?: boolean;
   context: {
     /** Graph items related to the message. The client may send hints; the server adds what it finds. */
     nodes: ContextNode[];

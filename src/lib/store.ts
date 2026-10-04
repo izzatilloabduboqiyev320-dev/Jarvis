@@ -4,7 +4,10 @@ import { create } from "zustand";
 import type { LayoutName } from "@/knowledge/graph";
 import type { NodeCategory } from "@/types/graph";
 
-export type HudState = "idle" | "listening" | "thinking" | "executing" | "speaking" | "error";
+import type { JarvisVoiceState } from "@/voice/voice-state";
+
+/** JARVIS's single state (voice, pipeline, approvals); the HUD shows it. */
+export type HudState = JarvisVoiceState;
 
 export type ActivityKind = "user" | "search" | "result" | "tool" | "ai" | "error" | "system" | "memory";
 
@@ -38,7 +41,7 @@ export interface Approval {
   replyId?: number;
 }
 
-export type VoiceLang = "uz-UZ" | "en-US";
+export type VoiceLang = "uz-UZ" | "en-US" | "ru-RU";
 export const VOICE_LANG_KEY = "jarvis.voice-lang.v1";
 export const CHAT_KEY = "jarvis.chat.v1";
 export const VOICE_REPLIES_KEY = "jarvis.voice-replies.v1";
@@ -116,7 +119,7 @@ export const useJarvis = create<JarvisStore>((set) => ({
   layout: "force",
   recent: [],
   viewer: null,
-  hud: "idle",
+  hud: "standby",
   hudDetail: "",
   voiceReplies: true,
   voiceLang: "uz-UZ",

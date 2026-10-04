@@ -16,13 +16,13 @@ npm run dev        # then open http://localhost:3000
 
 No API keys are needed. Without keys JARVIS runs in **DEMO MODE** with a local brain that searches the knowledge graph.
 
-### Talk to JARVIS by voice (natural Uzbek)
+### Talk to JARVIS by voice: say "Jarvis"
 
-1. Get a Gemini key at https://aistudio.google.com → Get API key → Create API key.
-2. In JARVIS open **Settings → Gemini API key**, paste it, press **Saqlash**.
-3. On the graph page press **Ovozli suhbat** (under the HUD), allow the microphone in Chrome, and talk. JARVIS answers aloud with Gemini's voice and listens again; press the button again to stop.
+1. Open JARVIS in Google Chrome and press **Voice · Off** under the HUD so it says **Voice · On**. Allow the microphone.
+2. The HUD shows **SAY "JARVIS"**. Say "Jarvis", wait for "Labbay?", then your question ("bugungi ishlarimni ayt", "show everything connected to ICT"). Or say it in one breath: "Jarvis, ICT bilan bog'liq fayllarni top".
+3. JARVIS answers in chat and aloud, then listens ~10 s for a follow-up without "Jarvis", then waits for "Jarvis" again. "Bekor qil" / "cancel" cancels; Esc or the Stop button interrupts.
 
-With only a Gemini key, Gemini also writes the answers; with a Claude key too, Claude answers and Gemini speaks.
+No paid service is needed (Chrome's recogniser and voices). A Gemini key adds a natural Uzbek voice. Click the HUD or press ⌘⇧Space to talk without the wake word. All switches are in **Settings → Ovoz**. Details and the plan for a background macOS helper: `docs/VOICE.md`.
 
 ### Chat with Claude
 
@@ -54,7 +54,7 @@ For a faster production build: `npm run build && npm start`.
 | JARVIS in Telegram | Settings → **JARVIS Telegram'da**: paste the token of a NEW bot made for JARVIS, then send the 6-digit code to it. From then on, text or voice-message JARVIS from the phone (voice is transcribed by Gemini); same tools and memory as the app; computer actions ask **Ha / Yo'q** with Telegram buttons. Only the paired chat is answered. Long polling from this computer, so no public URL is needed (JARVIS must be running) |
 | Markets (TradingView) | "BTC narxi qancha?", "oltin grafigini och", "BTC 70000 dan oshsa ayt". Live prices from free public endpoints (Binance for crypto pairs, Yahoo Finance for stocks/forex/gold), TradingView charts opened with approval, price alerts checked every minute and announced in JARVIS and Telegram. Read-only: there is no trading code at all |
 | Telegram bots | Settings → **Telegram botlar**: paste a bot token from @BotFather. The bot appears on the graph and JARVIS checks it at start-up and when asked ("botlarim ishlayaptimi?"). Read-only: only `getMe` and `getWebhookInfo` are called (never `getUpdates`, never sends). Tokens stay in `~/.jarvis/telegram.json` (owner-only) and never reach the browser |
-| JARVIS HUD | idle / listening / thinking / executing / speaking / error, each animated differently; push-to-talk (Chrome/Edge) with a mic-reactive ring; optional spoken replies (browser voice) |
+| JARVIS HUD + voice | one state (standby, say “Jarvis”, online, listening, transcribing, thinking, searching, executing, approval, speaking, error), each animated from real events; “Jarvis” wake word, follow-up window, cancel, Esc/Stop, ⌘⇧Space; mic level drives the rings; red dot while the microphone is open |
 | Chat (real Claude brain) | chat window on the graph page and /chat. For each message the server finds only the relevant memories and graph items, gives them to Claude (Gemini as backup) with the tools, streams the answer, and saves the conversation in `~/.jarvis/conversations.json` (survives reloads, restarts and other browsers; Telegram has its own conversation). Without an AI key the local brain answers |
 | Activity stream | real steps from the server (request received, memory/graph search and what was found, AI call, tools, approvals, errors), kept in `~/.jarvis/activity.json` and shown again after a reload; Telegram steps are marked |
 | Pages | /graph (main), /chat, /memory, /files, /agents, /skills, /tasks, /settings |
