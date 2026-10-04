@@ -57,6 +57,8 @@ export interface KGNode {
   importance: number;
   tags: string[];
   source: string;
+  /** External link (video, website, docs…). Only http(s); opened via src/lib/external-link.ts. */
+  url?: string;
   /** ISO timestamp */
   updatedAt: string;
   /** Optional longer body (notes, file excerpts, memories). */

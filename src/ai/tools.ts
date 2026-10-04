@@ -3,7 +3,7 @@ import type { ActivityKind } from "@/server/activity";
 import { createGraph, describePath, findPath, type KnowledgeGraph } from "@/knowledge/graph";
 import type { ItemCategory } from "@/knowledge/items";
 import { resolveItem, searchGraph } from "@/knowledge/graph-search";
-import { addItem, getGraphData, setTaskStatus } from "@/server/store";
+import { addItem, getGraphData, setItemUrl, setTaskStatus } from "@/server/store";
 import { botGraph, botNodeId, checkBots } from "@/server/telegram";
 import type { KGEdge, KGNode } from "@/types/graph";
 import { requestApproval, type ApprovalEvent } from "@/server/approvals";
@@ -15,8 +15,8 @@ import { cancelAlert, chartUrl, createAlert, describeAlert, getQuote, listAlerts
  * server against the knowledge graph, and reports what it did to the browser
  * as an event (so the graph updates live and the activity stream stays honest).
  *
- * Safety: graph tools can read, create and mark tasks done; nothing deletes or
- * changes existing knowledge. check_bots asks Telegram read-only questions.
+ * Safety: graph tools can read, create, mark tasks done and save an item's
+ * http(s) link; nothing deletes or rewrites existing knowledge. check_bots asks Telegram read-only questions.
  * Computer tools (open_app, open_website, set_volume, take_screenshot) run a
  * fixed, validated command and ONLY after Izzatillo presses "Ha" on screen.
  */
@@ -70,7 +70,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: "save_memory",
     description:
       "Permanently remember a fact, decision or preference Izzatillo tells you (when they say remember / eslab qol / yodda tut, or shares something clearly worth keeping). Link it to related item ids.",
-    parameters: { type: "object", properties: { title: { ...str, description: "2-6 word label" }, text: { ...str, description: "The fact, in their words" }, links: ids }, required: ["title", "text"] },
+    parameters: { type: "object", properties: { title: { ...str, description: "2-6 word label" }, text: { ...str, description: "The fact, in their words" }, links: ids, url: { ...str, description: "Original http(s) link if they gave one" } }, required: ["title", "text"] },
   },
   {
     name: "create_task",
@@ -79,8 +79,14 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "add_note",
-    description: "Save a note (an idea, plan or piece of information they dictate). Link it to related item ids.",
-    parameters: { type: "object", properties: { title: str, text: str, links: ids }, required: ["title", "text"] },
+    description: "Save a note (an idea, plan or piece of information they dictate, or a video/article/website they share — put its exact link in url). Link it to related item ids.",
+    parameters: { type: "object", properties: { title: str, text: str, links: ids, url: { ...str, description: "The exact http(s) link they gave (never made up)" } }, required: ["title", "text"] },
+  },
+  {
+    name: "set_link",
+    description:
+      "Save the external link (YouTube video, website, docs, course…) of an existing item, so it can be opened from JARVIS. Only use a link Izzatillo actually gave you; never guess one.",
+    parameters: { type: "object", properties: { item: { ...str, description: "Item id or name" }, url: { ...str, description: "Exact http(s) link" } }, required: ["item", "url"] },
   },
   {
     name: "check_bots",
@@ -150,7 +156,7 @@ const resolve = resolveItem;
 
 function brief(graph: KnowledgeGraph, id: string) {
   const a = graph.getNodeAttributes(id);
-  return { id, name: a.label, type: a.category, about: a.node.description, updated: a.node.updatedAt.slice(0, 10), status: a.node.metadata?.status };
+  return { id, name: a.label, type: a.category, about: a.node.description, updated: a.node.updatedAt.slice(0, 10), status: a.node.metadata?.status, url: a.node.url };
 }
 
 const toList = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : []);
@@ -217,11 +223,21 @@ export async function runTool(name: string, input: Record<string, unknown>, emit
         label: s("title"),
         content: s("text") || s("details") || s("title"),
         links: toList(input.links).map((l) => resolve(graph, l) ?? l),
+        url: s("url") || undefined,
       });
       emit({ t: "created", ...item });
       emit({ t: "focus", ids: [item.node.id, ...item.edges.map((e) => e.target)] });
       emit({ t: "tool", name, summary: `Saved ${category} “${item.node.label}”` });
       return { saved: true, id: item.node.id };
+    }
+    case "set_link": {
+      const id = resolve(graph, s("item"));
+      if (!id) throw new Error(`No item called "${s("item")}"`);
+      const node = await setItemUrl(id, s("url"));
+      if (!node) throw new Error(`No item called "${s("item")}"`);
+      emit({ t: "updated", node });
+      emit({ t: "tool", name, summary: `Saved the link of “${node.label}”` });
+      return { saved: true, id, url: node.url };
     }
     case "check_bots": {
       const bots = await checkBots();

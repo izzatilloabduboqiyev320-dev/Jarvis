@@ -153,10 +153,10 @@ const NODES: N[] = [
   ["v-ai-tools", "5 AI Tools That Save Me 10 Hours", "video", 0.45, "Published video — best performer this quarter.", ["youtube", "ai", "tools"], { metadata: { status: "published" } }],
 
   // ── Web sources ───────────────────────────────────────────────────
-  ["w-anthropic-docs", "Anthropic Docs", "web", 0.45, "Claude API and tool-use documentation.", ["claude", "docs", "api"], { source: "docs.anthropic.com" }],
-  ["w-yt-studio", "YouTube Studio Analytics", "web", 0.45, "Channel analytics: CTR, retention, traffic sources.", ["youtube", "analytics"], { source: "studio.youtube.com" }],
-  ["w-forex-factory", "Forex Factory", "web", 0.35, "Economic calendar for news events.", ["trading", "news", "calendar"], { source: "forexfactory.com" }],
-  ["w-mcp-spec", "MCP Specification", "web", 0.35, "Model Context Protocol spec and server list.", ["mcp", "spec"], { source: "modelcontextprotocol.io" }],
+  ["w-anthropic-docs", "Anthropic Docs", "web", 0.45, "Claude API and tool-use documentation.", ["claude", "docs", "api"], { source: "docs.anthropic.com", url: "https://docs.anthropic.com" }],
+  ["w-yt-studio", "YouTube Studio Analytics", "web", 0.45, "Channel analytics: CTR, retention, traffic sources.", ["youtube", "analytics"], { source: "studio.youtube.com", url: "https://studio.youtube.com" }],
+  ["w-forex-factory", "Forex Factory", "web", 0.35, "Economic calendar for news events.", ["trading", "news", "calendar"], { source: "forexfactory.com", url: "https://www.forexfactory.com/calendar" }],
+  ["w-mcp-spec", "MCP Specification", "web", 0.35, "Model Context Protocol spec and server list.", ["mcp", "spec"], { source: "modelcontextprotocol.io", url: "https://modelcontextprotocol.io" }],
 
   // ── Companies ─────────────────────────────────────────────────────
   ["co-anthropic", "Anthropic", "company", 0.55, "AI safety company that builds Claude.", ["claude", "ai", "company"]],

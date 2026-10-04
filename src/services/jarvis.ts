@@ -13,6 +13,7 @@ import { speak, speakGemini, stopSpeaking } from "@/voice/speak";
 import { speechLang, toSpeech } from "@/voice/speech-text";
 import { startPushToTalk } from "@/voice/push-to-talk";
 import type { KGEdge, KGNode } from "@/types/graph";
+import { openExternalUrl, redactUrl, warnMissingUrl, type OpenResult } from "@/lib/external-link";
 
 /**
  * JARVIS request pipeline.
@@ -446,6 +447,38 @@ export async function deleteItem(id: string) {
   s.clearFocus();
   s.bumpGraph();
   s.log("memory", `Deleted “${label}”`);
+}
+
+/**
+ * Opens an item's external link (video, website, docs…) in a new browser tab.
+ * Selection and the graph are left as they are; the activity stream records it.
+ */
+export function openResource(node: Pick<KGNode, "label" | "category" | "url">): OpenResult {
+  const s = useJarvis.getState();
+  const r = openExternalUrl(node.url);
+  if (r.ok) s.log("system", `[RESOURCE] Opened: ${node.label} (${redactUrl(r.url)})`);
+  else if (r.reason === "missing") {
+    warnMissingUrl(node);
+    s.log("error", `[RESOURCE] External link unavailable: ${node.label}`);
+  } else s.log("error", `[RESOURCE] ${r.message} ${node.label}`);
+  return r;
+}
+
+/** Saves (or clears) an item's external link permanently. Returns an error message, or null when saved. */
+export async function setResourceUrl(id: string, url: string | null): Promise<string | null> {
+  const s = useJarvis.getState();
+  try {
+    const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+    const j = (await res.json().catch(() => ({}))) as { node?: KGNode; message?: string };
+    if (!res.ok || !j.node) return j.message ?? "Could not save the link";
+    const graph = getGraph();
+    if (graph.hasNode(id)) graph.setNodeAttribute(id, "node", j.node);
+    s.bumpGraph();
+    s.log("memory", j.node.url ? `[RESOURCE] Link saved for “${j.node.label}” (${redactUrl(j.node.url)})` : `[RESOURCE] Link removed from “${j.node.label}”`);
+    return null;
+  } catch {
+    return "Could not save the link";
+  }
 }
 
 const ALERTS_SEEN_KEY = "jarvis.alerts-seen.v1";

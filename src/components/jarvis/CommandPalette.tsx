@@ -7,7 +7,8 @@ import { searchLabels } from "@/knowledge/query";
 import { graphCommands } from "@/lib/graph-commands";
 import { getGraph } from "@/lib/graph-instance";
 import { useJarvis } from "@/lib/store";
-import { askJarvis, testVoice } from "@/services/jarvis";
+import { askJarvis, openResource, testVoice } from "@/services/jarvis";
+import { resourceUrl, sourceName } from "@/lib/external-link";
 import { Dot } from "@/components/layout/ui";
 
 type Mode = "root" | "note" | "task" | "memory" | "files";
@@ -19,6 +20,8 @@ interface Item {
   hint?: string;
   color?: string;
   run: () => void;
+  /** Items with an external link get a ↗ button that opens it. */
+  link?: { url: string; open: () => void };
 }
 
 const MODES: Record<Exclude<Mode, "root">, { title: string; placeholder: string; toQuery: (t: string) => string }> = {
@@ -135,12 +138,14 @@ function PaletteDialog() {
       const graph = getGraph();
       for (const id of searchLabels(graph, q, 6)) {
         const a = graph.getNodeAttributes(id);
+        const url = resourceUrl(a.node);
         out.push({
           key: `n-${id}`,
           group: "Nodes",
           label: a.label,
-          hint: CATEGORIES[a.category].label,
+          hint: url ? sourceName(url) || CATEGORIES[a.category].label : CATEGORIES[a.category].label,
           color: a.color,
+          link: url ? { url, open: () => void openResource(a.node) } : undefined,
           run: () => {
             useJarvis.getState().select(id);
             graphCommands.centerOn(id);
@@ -169,7 +174,9 @@ function PaletteDialog() {
       setActive((a) => Math.max(0, a - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      items[active]?.run();
+      const it = items[active];
+      if ((e.metaKey || e.ctrlKey) && it?.link) it.link.open();
+      else it?.run();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -239,24 +246,44 @@ function PaletteDialog() {
                 {header && (
                   <div className="px-4 pb-1 pt-2 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-faint">{header}</div>
                 )}
-                <button
-                  data-idx={i}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => it.run()}
-                  className={`flex w-full items-center gap-2.5 px-4 py-[7px] text-left text-[13px] transition ${
-                    i === active ? "bg-accent/[0.08] text-ink" : "text-ink-dim"
-                  }`}
-                >
-                  {it.color ? <Dot color={it.color} size={7} /> : <span className={`h-[5px] w-[5px] ${i === active ? "bg-accent" : "bg-white/15"}`} />}
-                  <span className="flex-1 truncate">{it.label}</span>
-                  {it.hint && <span className="font-mono text-[10px] uppercase tracking-wider text-ink-faint">{it.hint}</span>}
-                </button>
+                <div className="flex items-center">
+                  <button
+                    data-idx={i}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => it.run()}
+                    className={`flex min-w-0 flex-1 items-center gap-2.5 px-4 py-[7px] text-left text-[13px] transition ${
+                      i === active ? "bg-accent/[0.08] text-ink" : "text-ink-dim"
+                    }`}
+                  >
+                    {it.color ? <Dot color={it.color} size={7} /> : <span className={`h-[5px] w-[5px] ${i === active ? "bg-accent" : "bg-white/15"}`} />}
+                    <span className="flex-1 truncate">{it.label}</span>
+                    {it.hint && <span className="font-mono text-[10px] uppercase tracking-wider text-ink-faint">{it.hint}</span>}
+                  </button>
+                  {it.link && (
+                    <a
+                      href={it.link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${it.link.url}`}
+                      aria-label={`Open ${it.label}`}
+                      data-testid="palette-open-resource"
+                      onMouseEnter={() => setActive(i)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        it.link?.open();
+                      }}
+                      className={`self-stretch px-3 py-[7px] font-mono text-[12px] text-accent transition hover:bg-accent/[0.12] ${i === active ? "bg-accent/[0.08]" : ""}`}
+                    >
+                      ↗
+                    </a>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
         <div className="flex items-center justify-between border-t border-line px-4 py-2 font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-faint">
-          <span>↑↓ navigate · ↵ select · esc close</span>
+          <span>↑↓ navigate · ↵ select · ⌘↵ open link · esc close</span>
           <span>{voiceReplies ? "voice replies on" : "voice replies off"}</span>
         </div>
       </div>

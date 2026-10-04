@@ -6,6 +6,7 @@ import { getGraph } from "@/lib/graph-instance";
 import { formatDate, relativeTime } from "@/lib/format";
 import { useJarvis } from "@/lib/store";
 import { Dot } from "@/components/layout/ui";
+import ResourceLink from "@/components/jarvis/ResourceLink";
 
 /** Opened by double-clicking a node: the "associated item" view. */
 export default function ItemViewer() {
@@ -49,6 +50,7 @@ export default function ItemViewer() {
           </button>
         </div>
         <p className="mt-4 text-[13.5px] leading-relaxed text-ink-dim">{node.description}</p>
+        <ResourceLink key={node.id} node={node} large />
         {node.content && (
           <pre className="mt-4 whitespace-pre-wrap border-l border-accent/40 bg-white/[0.02] px-4 py-3 font-sans text-[13px] leading-relaxed text-ink">
             {node.content}
@@ -64,6 +66,7 @@ export default function ItemViewer() {
           <dt className="text-ink-faint">IMPORTANCE</dt><dd className="text-ink-dim">{node.importance.toFixed(2)}</dd>
           <dt className="text-ink-faint">UPDATED</dt><dd className="text-ink-dim">{formatDate(node.updatedAt)} · {relativeTime(node.updatedAt)}</dd>
           <dt className="text-ink-faint">SOURCE</dt><dd className="text-ink-dim">{node.source}</dd>
+          {node.url && (<><dt className="text-ink-faint">URL</dt><dd className="truncate text-ink-dim" title={node.url}>{node.url}</dd></>)}
           <dt className="text-ink-faint">ID</dt><dd className="text-ink-faint">{node.id}</dd>
           {node.metadata &&
             Object.entries(node.metadata).map(([k, v]) => (

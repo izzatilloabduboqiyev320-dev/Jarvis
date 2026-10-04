@@ -43,6 +43,7 @@ Telegram (telegram-assistant.ts) ──────────────▶  
 - **Server decides the context:** the browser may send hints (what it highlighted), but the server retrieves the relevant memories and items itself, so the app and Telegram get the same brain.
 - **Keys stay on the server:** `src/ai/config.ts` is `server-only`; the browser only learns `mode: demo | ai`.
 - **Data outside the project folder:** `~/.jarvis` survives updates and reinstalls.
+- **External links:** `KGNode.url` is the one canonical link field (videos, websites, docs). Links the user adds to any item (demo ones too) live in `jarvis-store.json` → `links`. Everything opens through `src/lib/external-link.ts` (http/https only, new tab with `noopener,noreferrer`, logs without query strings); the UI is `components/jarvis/ResourceLink.tsx` (Inspector + item viewer) and the ↗ on palette search results. Links are never invented: a resource without one shows "External link unavailable" and "+ Add link".
 
 ## Roadmap (the user's order)
 

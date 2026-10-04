@@ -1,3 +1,4 @@
+import { safeExternalUrl } from "@/lib/external-link";
 import type { KGEdge, KGNode } from "@/types/graph";
 
 /** Things JARVIS (or the user) can create in the graph. */
@@ -9,6 +10,8 @@ export interface ItemSpec {
   label: string;
   content: string;
   links: string[];
+  /** Original link of the thing being saved (a video, article…). Kept only if it is a safe http(s) address. */
+  url?: string;
 }
 
 function slug(s: string) {
@@ -27,6 +30,7 @@ export function buildItem(spec: ItemSpec, exists: (id: string) => boolean, sourc
   const now = new Date().toISOString();
   const label = spec.label.trim().slice(0, 120) || spec.content.trim().slice(0, 60) || "Untitled";
   const content = spec.content.trim().slice(0, 4000);
+  const url = safeExternalUrl(spec.url) ?? undefined;
   const node: KGNode = {
     id: `${spec.category}-${slug(label)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
     label,
@@ -36,6 +40,7 @@ export function buildItem(spec: ItemSpec, exists: (id: string) => boolean, sourc
     importance: spec.category === "memory" ? 0.45 : 0.4,
     tags: [spec.category, "created by jarvis"],
     source,
+    ...(url ? { url } : {}),
     updatedAt: now,
     metadata: spec.category === "task" ? { status: "open" } : undefined,
   };

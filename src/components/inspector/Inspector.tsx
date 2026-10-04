@@ -9,6 +9,7 @@ import { useJarvis } from "@/lib/store";
 import { askJarvis, deleteItem, setTaskDone } from "@/services/jarvis";
 import { formatDate, relativeTime } from "@/lib/format";
 import { Dot, PanelTitle } from "@/components/layout/ui";
+import ResourceLink from "@/components/jarvis/ResourceLink";
 
 interface Connection {
   id: string;
@@ -132,6 +133,8 @@ export default function Inspector() {
           ))}
         </div>
       )}
+
+      <ResourceLink key={node.id} node={node} />
 
       <div className="mt-3 flex flex-wrap gap-1">
         <ActionButton onClick={() => graphCommands.centerOn(node.id)}>Focus</ActionButton>
